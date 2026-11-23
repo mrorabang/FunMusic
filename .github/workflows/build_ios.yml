@@ -29,12 +29,12 @@ jobs:
           cd build/ios/iphoneos
           mkdir -p Payload
           cp -r Runner.app Payload/
-          zip -r FunMusic.ipa Payload
+          zip -r QMusic.ipa Payload
           echo "IPA package created successfully."
 
       - name: Upload IPA to Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: FunMusic-iOS
-          path: build/ios/iphoneos/FunMusic.ipa
+          name: QMusic-iOS
+          path: build/ios/iphoneos/QMusic.ipa
           retention-days: 7

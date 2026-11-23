@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/player_provider.dart';
 import '../../services/download_service.dart';
-import '../../services/pip_service.dart';
 import 'playlist_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -155,22 +154,6 @@ class _PlayerScreenState extends State<PlayerScreen>
             icon: const Icon(Icons.playlist_add_rounded, size: 26),
             onPressed: () => showAddToPlaylistSheet(context, song),
           ),
-          // Nút PiP
-          IconButton(
-            tooltip: 'Thu nhỏ PiP ra màn hình chính',
-            icon: const Icon(Icons.picture_in_picture_alt_rounded, size: 24),
-            onPressed: () async {
-              final ok = await PipService.enterPip();
-              if (!ok && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Chế độ PiP sẽ tự động bật khi bạn vuốt về màn hình Home'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              }
-            },
-          ),
           // Nút Download
           if (!song.isLocal)
             IconButton(
@@ -229,7 +212,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             ),
             const SizedBox(height: 2),
             Text(
-              song.album.isNotEmpty ? song.album : 'Fun Music',
+              song.album.isNotEmpty ? song.album : 'Q Music',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(

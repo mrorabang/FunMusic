@@ -5,7 +5,6 @@ import '../../models/song.dart';
 import '../../providers/player_provider.dart';
 import '../../services/download_service.dart';
 import '../../services/music_api_service.dart';
-import '../../services/pip_service.dart';
 import '../widgets/mini_player.dart';
 import 'local_music_screen.dart';
 import 'playlist_screen.dart';
@@ -228,18 +227,13 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(width: 10),
             Text(
               MusicApiService.currentSource == MusicApiSource.deezer
-                  ? 'Fun Music (Deezer)'
-                  : 'Fun Music (iTunes)',
+                  ? 'Q Music (Deezer)'
+                  : 'Q Music (iTunes)',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Thu nhỏ PiP ra màn hình chính',
-            icon: const Icon(Icons.picture_in_picture_alt_rounded),
-            onPressed: () => PipService.enterPip(),
-          ),
           IconButton(
             tooltip: 'Chọn nguồn API nhạc',
             icon: const Icon(Icons.tune_rounded),
