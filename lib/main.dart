@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/player_provider.dart';
 import 'services/download_service.dart';
+import 'services/local_music_service.dart';
 import 'services/notification_service.dart';
+import 'services/playlist_service.dart';
 import 'ui/screens/home_screen.dart';
 
 void main() async {
@@ -13,15 +15,19 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Khởi tạo dịch vụ thông báo khóa màn hình và bộ nhớ tải bài hát
+  // Khởi tạo tất cả các dịch vụ nền
   await NotificationService.init();
   await DownloadService.instance.init();
+  await PlaylistService.instance.init();
+  await LocalMusicService.instance.init();
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => PlayerProvider()),
         ChangeNotifierProvider.value(value: DownloadService.instance),
+        ChangeNotifierProvider.value(value: PlaylistService.instance),
+        ChangeNotifierProvider.value(value: LocalMusicService.instance),
       ],
       child: const MusicApp(),
     ),
@@ -41,7 +47,7 @@ class MusicApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF8B5CF6), // Tím neon hiện đại
+          seedColor: const Color(0xFF8B5CF6),
           brightness: Brightness.dark,
           surface: const Color(0xFF12121A),
           surfaceContainerHighest: const Color(0xFF1E1E2C),

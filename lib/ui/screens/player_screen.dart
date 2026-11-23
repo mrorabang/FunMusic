@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/player_provider.dart';
 import '../../services/download_service.dart';
 import '../../services/pip_service.dart';
+import 'playlist_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -74,10 +75,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     final double screenWidth = MediaQuery.of(context).size.width;
     final double screenHeight = MediaQuery.of(context).size.height;
-    final bool isSmallScreen = screenHeight < 350; // In PiP mode!
+    final bool isSmallScreen = screenHeight < 350; // PiP Mode
     final double discSize = (screenWidth * 0.70).clamp(180.0, 300.0);
 
-    // If device enters PiP mode, show compact view
     if (isSmallScreen) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -86,12 +86,19 @@ class _PlayerScreenState extends State<PlayerScreen>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               ClipOval(
-                child: CachedNetworkImage(
-                  imageUrl: song.coverUrl,
-                  width: 80,
-                  height: 80,
-                  fit: BoxFit.cover,
-                ),
+                child: song.coverUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: song.coverUrl,
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                      )
+                    : Container(
+                        width: 80,
+                        height: 80,
+                        color: Colors.grey.shade900,
+                        child: const Icon(Icons.music_note, color: Colors.white),
+                      ),
               ),
               const SizedBox(width: 16),
               IconButton(
@@ -110,6 +117,28 @@ class _PlayerScreenState extends State<PlayerScreen>
       );
     }
 
+    // Biểu tượng chế độ lặp
+    IconData loopIcon;
+    Color loopColor;
+    String loopTooltip;
+    switch (player.loopMode) {
+      case LoopMode.all:
+        loopIcon = Icons.repeat_rounded;
+        loopColor = Theme.of(context).colorScheme.primary;
+        loopTooltip = 'Lặp toàn bộ danh sách';
+        break;
+      case LoopMode.single:
+        loopIcon = Icons.repeat_one_rounded;
+        loopColor = Theme.of(context).colorScheme.primary;
+        loopTooltip = 'Lặp lại 1 bài này';
+        break;
+      case LoopMode.none:
+        loopIcon = Icons.repeat_rounded;
+        loopColor = Colors.grey;
+        loopTooltip = 'Không lặp';
+        break;
+    }
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
@@ -120,16 +149,22 @@ class _PlayerScreenState extends State<PlayerScreen>
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          // Nút kích hoạt PiP
+          // Thêm vào Playlist
           IconButton(
-            tooltip: 'Phát PiP thu nhỏ ra màn hình chính',
+            tooltip: 'Thêm bài hát vào Playlist',
+            icon: const Icon(Icons.playlist_add_rounded, size: 26),
+            onPressed: () => showAddToPlaylistSheet(context, song),
+          ),
+          // Nút PiP
+          IconButton(
+            tooltip: 'Thu nhỏ PiP ra màn hình chính',
             icon: const Icon(Icons.picture_in_picture_alt_rounded, size: 24),
             onPressed: () async {
               final ok = await PipService.enterPip();
               if (!ok && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Chế độ PiP được kích hoạt tự động khi bạn bấm phím Home'),
+                    content: Text('Chế độ PiP sẽ tự động bật khi bạn vuốt về màn hình Home'),
                     duration: Duration(seconds: 2),
                   ),
                 );
@@ -137,59 +172,66 @@ class _PlayerScreenState extends State<PlayerScreen>
             },
           ),
           // Nút Download
-          IconButton(
-            tooltip: isDownloaded ? 'Đã tải về máy' : 'Tải bài hát về máy',
-            icon: isDownloading
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      value: progress,
-                      strokeWidth: 2.5,
-                      color: Theme.of(context).colorScheme.primary,
+          if (!song.isLocal)
+            IconButton(
+              tooltip: isDownloaded ? 'Đã tải về máy' : 'Tải bài hát về máy',
+              icon: isDownloading
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        value: progress,
+                        strokeWidth: 2.5,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    )
+                  : Icon(
+                      isDownloaded
+                          ? Icons.download_done_rounded
+                          : Icons.download_rounded,
+                      color: isDownloaded
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                      size: 26,
                     ),
-                  )
-                : Icon(
-                    isDownloaded
-                        ? Icons.download_done_rounded
-                        : Icons.download_rounded,
-                    color: isDownloaded
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
-                    size: 26,
-                  ),
-            onPressed: isDownloaded || isDownloading
-                ? null
-                : () async {
-                    final success = await downloadService.downloadSong(song);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(success
-                              ? 'Đã tải thành công "${song.title}"'
-                              : 'Tải bài hát thất bại'),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    }
-                  },
-          ),
+              onPressed: isDownloaded || isDownloading
+                  ? null
+                  : () async {
+                      final success = await downloadService.downloadSong(song);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(success
+                                ? 'Đã tải thành công "${song.title}"'
+                                : 'Tải bài hát thất bại'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+            ),
           const SizedBox(width: 8),
         ],
         title: Column(
           children: [
             Text(
-              'ĐANG PHÁT',
+              player.activePlaylistName != null
+                  ? 'PLAYLIST: ${player.activePlaylistName!.toUpperCase()}'
+                  : 'ĐANG PHÁT',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 11,
-                letterSpacing: 1.5,
+                letterSpacing: 1.2,
                 fontWeight: FontWeight.bold,
                 color: Theme.of(context).colorScheme.primary,
               ),
             ),
             const SizedBox(height: 2),
             Text(
-              song.album.isNotEmpty ? song.album : 'Music Player',
+              song.album.isNotEmpty ? song.album : 'Fun Music',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 13,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -340,6 +382,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   IconButton(
+                    tooltip: 'Ngẫu nhiên',
                     icon: Icon(
                       Icons.shuffle_rounded,
                       color: player.isShuffle
@@ -350,6 +393,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     onPressed: () => player.toggleShuffle(),
                   ),
                   IconButton(
+                    tooltip: 'Bài trước',
                     icon: const Icon(
                       Icons.skip_previous_rounded,
                       size: 42,
@@ -372,6 +416,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ],
                     ),
                     child: IconButton(
+                      tooltip: player.isPlaying ? 'Tạm dừng' : 'Phát',
                       icon: Icon(
                         player.isPlaying
                             ? Icons.pause_rounded
@@ -383,6 +428,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                   ),
                   IconButton(
+                    tooltip: 'Bài tiếp theo',
                     icon: const Icon(
                       Icons.skip_next_rounded,
                       size: 42,
@@ -390,14 +436,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                     onPressed: () => player.playNext(),
                   ),
                   IconButton(
+                    tooltip: loopTooltip,
                     icon: Icon(
-                      Icons.repeat_rounded,
-                      color: player.isLoop
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.grey,
+                      loopIcon,
+                      color: loopColor,
                       size: 26,
                     ),
-                    onPressed: () => player.toggleLoop(),
+                    onPressed: () => player.cycleLoopMode(),
                   ),
                 ],
               ),

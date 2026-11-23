@@ -5,17 +5,27 @@ import '../models/song.dart';
 import '../services/notification_service.dart';
 import '../services/pip_service.dart';
 
+enum LoopMode {
+  all('Lặp toàn bộ danh sách'),
+  single('Lặp 1 bài'),
+  none('Không lặp');
+
+  final String label;
+  const LoopMode(this.label);
+}
+
 class PlayerProvider with ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
 
   List<Song> _playlist = [];
   int _currentIndex = -1;
+  String? _activePlaylistName;
 
   PlayerState _state = PlayerState.stopped;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
-  bool _isLoop = true;
+  LoopMode _loopMode = LoopMode.all;
   bool _isShuffle = false;
 
   PlayerProvider() {
@@ -26,6 +36,7 @@ class PlayerProvider with ChangeNotifier {
   // Getters
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
+  String? get activePlaylistName => _activePlaylistName;
   Song? get currentSong =>
       (_currentIndex >= 0 && _currentIndex < _playlist.length)
           ? _playlist[_currentIndex]
@@ -34,7 +45,7 @@ class PlayerProvider with ChangeNotifier {
   bool get isPaused => _state == PlayerState.paused;
   Duration get position => _position;
   Duration get duration => _duration;
-  bool get isLoop => _isLoop;
+  LoopMode get loopMode => _loopMode;
   bool get isShuffle => _isShuffle;
 
   Future<void> _initAudioSession() async {
@@ -82,14 +93,36 @@ class PlayerProvider with ChangeNotifier {
       notifyListeners();
     });
 
+    // Tự động chuyển bài tiếp theo khi hết bài
     _player.onPlayerComplete.listen((_) {
-      playNext();
+      _handleSongCompletion();
     });
   }
 
-  Future<void> playSong(Song song, {List<Song>? playlist}) async {
+  Future<void> _handleSongCompletion() async {
+    if (_playlist.isEmpty) return;
+
+    if (_loopMode == LoopMode.single) {
+      // Lặp lại bài đang phát
+      await seek(Duration.zero);
+      if (currentSong != null) {
+        await _playCurrent();
+      }
+      return;
+    }
+
+    // Tự động chuyển bài kế tiếp
+    await playNext(autoTriggered: true);
+  }
+
+  Future<void> playSong(
+    Song song, {
+    List<Song>? playlist,
+    String? playlistName,
+  }) async {
     if (playlist != null && playlist.isNotEmpty) {
       _playlist = List.from(playlist);
+      _activePlaylistName = playlistName;
       _currentIndex = _playlist.indexWhere((s) => s.id == song.id);
       if (_currentIndex == -1) {
         _playlist.insert(0, song);
@@ -103,6 +136,12 @@ class PlayerProvider with ChangeNotifier {
     }
 
     notifyListeners();
+    await _playCurrent();
+  }
+
+  Future<void> _playCurrent() async {
+    final song = currentSong;
+    if (song == null) return;
 
     try {
       await _player.stop();
@@ -121,7 +160,7 @@ class PlayerProvider with ChangeNotifier {
       );
       await PipService.setPlayingState(true);
     } catch (e) {
-      debugPrint('PlayerProvider.playSong error: $e');
+      debugPrint('PlayerProvider._playCurrent error: $e');
     }
   }
 
@@ -133,26 +172,43 @@ class PlayerProvider with ChangeNotifier {
       if (_state == PlayerState.paused) {
         await _player.resume();
       } else {
-        if (currentSong!.isLocal && currentSong!.localFilePath != null) {
-          await _player.play(DeviceFileSource(currentSong!.localFilePath!));
-        } else {
-          await _player.play(UrlSource(currentSong!.streamUrl));
-        }
+        await _playCurrent();
       }
     }
   }
 
-  Future<void> playNext() async {
+  Future<void> playNext({bool autoTriggered = false}) async {
     if (_playlist.isEmpty) return;
 
     if (_isShuffle) {
-      _currentIndex = Random().nextInt(_playlist.length);
+      if (_playlist.length > 1) {
+        int nextIndex = _currentIndex;
+        while (nextIndex == _currentIndex) {
+          nextIndex = Random().nextInt(_playlist.length);
+        }
+        _currentIndex = nextIndex;
+      }
     } else {
-      _currentIndex = (_currentIndex + 1) % _playlist.length;
+      if (_currentIndex < _playlist.length - 1) {
+        _currentIndex++;
+      } else {
+        // Hết danh sách playlist
+        if (_loopMode == LoopMode.all) {
+          _currentIndex = 0; // Quay về bài đầu tiên của playlist
+        } else if (autoTriggered && _loopMode == LoopMode.none) {
+          // Không lặp và đã hết bài: dừng phát
+          await _player.stop();
+          _position = Duration.zero;
+          notifyListeners();
+          return;
+        } else {
+          _currentIndex = 0;
+        }
+      }
     }
 
-    final nextSong = _playlist[_currentIndex];
-    await playSong(nextSong);
+    notifyListeners();
+    await _playCurrent();
   }
 
   Future<void> playPrevious() async {
@@ -169,16 +225,26 @@ class PlayerProvider with ChangeNotifier {
       _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
     }
 
-    final prevSong = _playlist[_currentIndex];
-    await playSong(prevSong);
+    notifyListeners();
+    await _playCurrent();
   }
 
   Future<void> seek(Duration newPosition) async {
     await _player.seek(newPosition);
   }
 
-  void toggleLoop() {
-    _isLoop = !_isLoop;
+  void cycleLoopMode() {
+    switch (_loopMode) {
+      case LoopMode.all:
+        _loopMode = LoopMode.single;
+        break;
+      case LoopMode.single:
+        _loopMode = LoopMode.none;
+        break;
+      case LoopMode.none:
+        _loopMode = LoopMode.all;
+        break;
+    }
     notifyListeners();
   }
 

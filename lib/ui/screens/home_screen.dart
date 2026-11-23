@@ -7,7 +7,8 @@ import '../../services/download_service.dart';
 import '../../services/music_api_service.dart';
 import '../../services/pip_service.dart';
 import '../widgets/mini_player.dart';
-import 'downloads_screen.dart';
+import 'local_music_screen.dart';
+import 'playlist_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,6 +18,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  int _currentTabIndex = 0;
+
   final TextEditingController _searchController = TextEditingController();
   List<Song> _songs = [];
   List<Song> _featuredSongs = [];
@@ -123,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     subtitle: Text(
                       source == MusicApiSource.deezer
-                          ? 'Server chính thức Deezer (mp3 preview 30s, ảnh HD)'
+                          ? 'Server Deezer (mp3 preview 30s, ảnh HD)'
                           : 'Server Apple iTunes (m4a chất lượng cao, không giới hạn)',
                       style: const TextStyle(fontSize: 12),
                     ),
@@ -148,11 +151,61 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      body: Column(
+        children: [
+          Expanded(
+            child: IndexedStack(
+              index: _currentTabIndex,
+              children: [
+                // Tab 0: Khám phá trực tuyến
+                _buildExploreTab(context),
+                // Tab 1: Quản lý Playlist
+                const PlaylistScreen(),
+                // Tab 2: Thư viện máy & Tải về
+                const LocalMusicScreen(),
+              ],
+            ),
+          ),
+          // Mini Player luôn ghim phía trên thanh điều hướng
+          const MiniPlayer(),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentTabIndex,
+        onDestinationSelected: (idx) {
+          setState(() {
+            _currentTabIndex = idx;
+          });
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.explore_outlined),
+            selectedIcon: Icon(Icons.explore_rounded),
+            label: 'Khám phá',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.queue_music_outlined),
+            selectedIcon: Icon(Icons.queue_music_rounded),
+            label: 'Playlist',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.folder_outlined),
+            selectedIcon: Icon(Icons.folder_rounded),
+            label: 'Thiết bị & Tải về',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExploreTab(BuildContext context) {
     final player = context.watch<PlayerProvider>();
     final downloadService = context.watch<DownloadService>();
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -182,31 +235,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
-          // Nút PiP
           IconButton(
             tooltip: 'Thu nhỏ PiP ra màn hình chính',
             icon: const Icon(Icons.picture_in_picture_alt_rounded),
             onPressed: () => PipService.enterPip(),
           ),
-          // Nút Đổi API
           IconButton(
             tooltip: 'Chọn nguồn API nhạc',
             icon: const Icon(Icons.tune_rounded),
             onPressed: _showApiSourceDialog,
-          ),
-          // Nút Đến Trang Đã Tải Về
-          IconButton(
-            tooltip: 'Nhạc đã tải về máy',
-            icon: Badge(
-              isLabelVisible: downloadService.downloadedSongs.isNotEmpty,
-              label: Text('${downloadService.downloadedSongs.length}'),
-              child: const Icon(Icons.download_done_rounded),
-            ),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const DownloadsScreen()),
-              );
-            },
           ),
           const SizedBox(width: 4),
         ],
@@ -215,7 +252,8 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // Search Bar
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: TextField(
               controller: _searchController,
               textInputAction: TextInputAction.search,
@@ -273,7 +311,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: isSelected
                         ? Theme.of(context).colorScheme.onPrimary
                         : Theme.of(context).colorScheme.onSurface,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
@@ -299,7 +338,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 12),
                             const Text(
                               'Không tìm thấy bài hát nào',
-                              style: TextStyle(fontSize: 16, color: Colors.grey),
+                              style:
+                                  TextStyle(fontSize: 16, color: Colors.grey),
                             ),
                             const SizedBox(height: 8),
                             ElevatedButton(
@@ -310,15 +350,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       )
                     : RefreshIndicator(
-                        onRefresh: () => _loadData(_searchController.text.isNotEmpty
-                            ? _searchController.text
-                            : _currentFilter),
+                        onRefresh: () => _loadData(
+                            _searchController.text.isNotEmpty
+                                ? _searchController.text
+                                : _currentFilter),
                         child: ListView.builder(
                           padding: const EdgeInsets.only(bottom: 16),
-                          itemCount: _songs.length + (_featuredSongs.isNotEmpty ? 1 : 0),
+                          itemCount: _songs.length +
+                              (_featuredSongs.isNotEmpty ? 1 : 0),
                           itemBuilder: (context, index) {
                             if (_featuredSongs.isNotEmpty && index == 0) {
-                              return _buildFeaturedCarousel(_featuredSongs, player);
+                              return _buildFeaturedCarousel(
+                                  _featuredSongs, player);
                             }
 
                             final songIndex =
@@ -342,13 +385,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                         width: 50,
                                         height: 50,
                                         fit: BoxFit.cover,
-                                        placeholder: (context, url) => Container(
+                                        placeholder: (context, url) =>
+                                            Container(
                                           width: 50,
                                           height: 50,
                                           color: Colors.grey.shade800,
                                           child: const Icon(Icons.music_note),
                                         ),
-                                        errorWidget: (context, url, err) => Container(
+                                        errorWidget: (context, url, err) =>
+                                            Container(
                                           width: 50,
                                           height: 50,
                                           color: Colors.grey.shade800,
@@ -385,9 +430,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 children: [
                                   // Nút Download
                                   IconButton(
-                                    tooltip: isDownloaded
-                                        ? 'Đã tải'
-                                        : 'Tải về máy',
+                                    tooltip:
+                                        isDownloaded ? 'Đã tải' : 'Tải về máy',
                                     icon: isDownloading
                                         ? SizedBox(
                                             width: 18,
@@ -447,23 +491,35 @@ class _HomeScreenState extends State<HomeScreen> {
                                       if (isCurrentPlaying) {
                                         player.togglePlayPause();
                                       } else {
-                                        player.playSong(song, playlist: _songs);
+                                        player.playSong(
+                                          song,
+                                          playlist: _songs,
+                                          playlistName: 'Khám phá: $_currentFilter',
+                                        );
                                       }
                                     },
+                                  ),
+                                  // Menu Thêm vào Playlist
+                                  IconButton(
+                                    icon: const Icon(Icons.more_vert_rounded,
+                                        size: 20),
+                                    onPressed: () =>
+                                        showAddToPlaylistSheet(context, song),
                                   ),
                                 ],
                               ),
                               onTap: () {
-                                player.playSong(song, playlist: _songs);
+                                player.playSong(
+                                  song,
+                                  playlist: _songs,
+                                  playlistName: 'Khám phá: $_currentFilter',
+                                );
                               },
                             );
                           },
                         ),
                       ),
           ),
-
-          // Persistent Mini Player
-          const MiniPlayer(),
         ],
       ),
     );
@@ -495,7 +551,11 @@ class _HomeScreenState extends State<HomeScreen> {
               final isCurrent = player.currentSong?.id == song.id;
 
               return GestureDetector(
-                onTap: () => player.playSong(song, playlist: _songs),
+                onTap: () => player.playSong(
+                  song,
+                  playlist: _songs,
+                  playlistName: 'Khám phá: $_currentFilter',
+                ),
                 child: SizedBox(
                   width: 130,
                   child: Column(
