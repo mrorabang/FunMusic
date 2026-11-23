@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/song.dart';
+import 'local_audio_stream_server.dart';
 
 class YouTubeMusicService {
   static final YoutubeExplode _yt = YoutubeExplode();
@@ -22,7 +23,8 @@ class YouTubeMusicService {
   /// Lấy Audio Stream URL chất lượng cao (AAC m4a hoặc Opus) trực tiếp từ YouTube
   static Future<String?> resolveStreamUrl(String videoId) async {
     if (_streamCache.containsKey(videoId)) {
-      return _streamCache[videoId];
+      return LocalAudioStreamServer.instance
+          .getProxyUrl(videoId, _streamCache[videoId]!);
     }
 
     try {
@@ -44,7 +46,8 @@ class YouTubeMusicService {
 
       final url = streamInfo.url.toString();
       _streamCache[videoId] = url;
-      return url;
+      // Chuyển tiếp qua proxy cục bộ để vượt rào cản 403 Forbidden của Google CDN
+      return LocalAudioStreamServer.instance.getProxyUrl(videoId, url);
     } catch (e) {
       debugPrint('YouTubeMusicService.resolveStreamUrl error for $videoId: $e');
       return null;

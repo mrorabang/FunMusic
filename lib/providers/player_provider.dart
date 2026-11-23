@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
@@ -171,7 +172,13 @@ class PlayerProvider with ChangeNotifier {
         }
 
         if (playUrl.isNotEmpty) {
-          await _player.play(UrlSource(playUrl));
+          await _player.play(UrlSource(playUrl)).timeout(
+            const Duration(seconds: 6),
+            onTimeout: () {
+              debugPrint('Audio playback timed out for ${song.title}');
+              throw TimeoutException('Không thể kết nối luồng phát âm thanh');
+            },
+          );
         } else {
           debugPrint('Cannot play song: streamUrl is empty for ${song.title}');
         }
@@ -184,6 +191,7 @@ class PlayerProvider with ChangeNotifier {
       await PipService.setPlayingState(true);
     } catch (e) {
       _isBuffering = false;
+      _state = PlayerState.stopped;
       notifyListeners();
       debugPrint('PlayerProvider._playCurrent error: $e');
     }

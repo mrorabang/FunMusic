@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/player_provider.dart';
 import 'services/download_service.dart';
+import 'services/local_audio_stream_server.dart';
 import 'services/local_music_service.dart';
 import 'services/notification_service.dart';
 import 'services/playlist_service.dart';
@@ -17,6 +18,7 @@ void main() async {
 
   // Khởi tạo tất cả các dịch vụ nền
   await NotificationService.init();
+  await LocalAudioStreamServer.instance.init();
   await DownloadService.instance.init();
   await PlaylistService.instance.init();
   await LocalMusicService.instance.init();
