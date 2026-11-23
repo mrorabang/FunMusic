@@ -398,17 +398,29 @@ class _PlayerScreenState extends State<PlayerScreen>
                         )
                       ],
                     ),
-                    child: IconButton(
-                      tooltip: player.isPlaying ? 'Tạm dừng' : 'Phát',
-                      icon: Icon(
-                        player.isPlaying
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        size: 44,
-                        color: Theme.of(context).colorScheme.onPrimary,
-                      ),
-                      onPressed: () => player.togglePlayPause(),
-                    ),
+                    child: player.isBuffering
+                        ? const SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: Padding(
+                              padding: EdgeInsets.all(10.0),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                color: Colors.white,
+                              ),
+                            ),
+                          )
+                        : IconButton(
+                            tooltip: player.isPlaying ? 'Tạm dừng' : 'Phát',
+                            icon: Icon(
+                              player.isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              size: 44,
+                              color: Theme.of(context).colorScheme.onPrimary,
+                            ),
+                            onPressed: () => player.togglePlayPause(),
+                          ),
                   ),
                   IconButton(
                     tooltip: 'Bài tiếp theo',

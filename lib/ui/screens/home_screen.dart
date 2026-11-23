@@ -124,9 +124,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     subtitle: Text(
-                      source == MusicApiSource.deezer
-                          ? 'Server Deezer (mp3 preview 30s, ảnh HD)'
-                          : 'Server Apple iTunes (m4a chất lượng cao, không giới hạn)',
+                      source == MusicApiSource.youtube
+                          ? 'YouTube Music (Full 100% bài hát, stream m4a cực mượt)'
+                          : source == MusicApiSource.deezer
+                              ? 'Server Deezer (mp3 preview 30s, ảnh HD)'
+                              : 'Server Apple iTunes (m4a preview 30s)',
                       style: const TextStyle(fontSize: 12),
                     ),
                     onTap: () {
@@ -226,9 +228,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(width: 10),
             Text(
-              MusicApiService.currentSource == MusicApiSource.deezer
-                  ? 'Q Music (Deezer)'
-                  : 'Q Music (iTunes)',
+              MusicApiService.currentSource == MusicApiSource.youtube
+                  ? 'Q Music (YouTube)'
+                  : MusicApiService.currentSource == MusicApiSource.deezer
+                      ? 'Q Music (Deezer)'
+                      : 'Q Music (iTunes)',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
           ],

@@ -125,16 +125,28 @@ class MiniPlayer extends StatelessWidget {
                       ),
                     ),
                     // Controls
-                    IconButton(
-                      icon: Icon(
-                        player.isPlaying
-                            ? Icons.pause_circle_filled_rounded
-                            : Icons.play_circle_fill_rounded,
-                        size: 38,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      onPressed: () => player.togglePlayPause(),
-                    ),
+                    player.isBuffering
+                        ? SizedBox(
+                            width: 38,
+                            height: 38,
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          )
+                        : IconButton(
+                            icon: Icon(
+                              player.isPlaying
+                                  ? Icons.pause_circle_filled_rounded
+                                  : Icons.play_circle_fill_rounded,
+                              size: 38,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            onPressed: () => player.togglePlayPause(),
+                          ),
                     IconButton(
                       icon: const Icon(Icons.skip_next_rounded, size: 30),
                       onPressed: () => player.playNext(),

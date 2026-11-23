@@ -8,6 +8,7 @@ class Song {
   final int duration; // in seconds
   final bool isLocal;
   final String? localFilePath;
+  final String? youtubeId;
 
   Song({
     required this.id,
@@ -19,7 +20,34 @@ class Song {
     required this.duration,
     this.isLocal = false,
     this.localFilePath,
+    this.youtubeId,
   });
+
+  Song copyWith({
+    int? id,
+    String? title,
+    String? artist,
+    String? album,
+    String? coverUrl,
+    String? streamUrl,
+    int? duration,
+    bool? isLocal,
+    String? localFilePath,
+    String? youtubeId,
+  }) {
+    return Song(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      artist: artist ?? this.artist,
+      album: album ?? this.album,
+      coverUrl: coverUrl ?? this.coverUrl,
+      streamUrl: streamUrl ?? this.streamUrl,
+      duration: duration ?? this.duration,
+      isLocal: isLocal ?? this.isLocal,
+      localFilePath: localFilePath ?? this.localFilePath,
+      youtubeId: youtubeId ?? this.youtubeId,
+    );
+  }
 
   factory Song.fromDeezerJson(Map<String, dynamic> json) {
     String artistName = 'Unknown Artist';
@@ -88,6 +116,7 @@ class Song {
       duration: json['duration'] is int ? json['duration'] : 0,
       isLocal: json['isLocal'] == true,
       localFilePath: json['localFilePath']?.toString(),
+      youtubeId: json['youtubeId']?.toString(),
     );
   }
 
@@ -102,6 +131,7 @@ class Song {
       'duration': duration,
       'isLocal': isLocal,
       'localFilePath': localFilePath,
+      'youtubeId': youtubeId,
     };
   }
 }

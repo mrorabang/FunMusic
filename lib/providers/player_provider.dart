@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import '../models/song.dart';
+import '../services/music_api_service.dart';
 import '../services/notification_service.dart';
 import '../services/pip_service.dart';
 
@@ -24,6 +25,7 @@ class PlayerProvider with ChangeNotifier {
   PlayerState _state = PlayerState.stopped;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
+  bool _isBuffering = false;
 
   LoopMode _loopMode = LoopMode.all;
   bool _isShuffle = false;
@@ -43,6 +45,7 @@ class PlayerProvider with ChangeNotifier {
           : null;
   bool get isPlaying => _state == PlayerState.playing;
   bool get isPaused => _state == PlayerState.paused;
+  bool get isBuffering => _isBuffering;
   Duration get position => _position;
   Duration get duration => _duration;
   LoopMode get loopMode => _loopMode;
@@ -151,15 +154,37 @@ class PlayerProvider with ChangeNotifier {
       if (song.isLocal && song.localFilePath != null) {
         await _player.play(DeviceFileSource(song.localFilePath!));
       } else {
-        await _player.play(UrlSource(song.streamUrl));
+        String playUrl = song.streamUrl;
+        if (playUrl.isEmpty && song.youtubeId != null) {
+          _isBuffering = true;
+          notifyListeners();
+
+          final resolved = await MusicApiService.resolveStreamUrl(song);
+          if (resolved != null && resolved.isNotEmpty) {
+            playUrl = resolved;
+            if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
+              _playlist[_currentIndex] = song.copyWith(streamUrl: resolved);
+            }
+          }
+          _isBuffering = false;
+          notifyListeners();
+        }
+
+        if (playUrl.isNotEmpty) {
+          await _player.play(UrlSource(playUrl));
+        } else {
+          debugPrint('Cannot play song: streamUrl is empty for ${song.title}');
+        }
       }
 
       await NotificationService.showMediaNotification(
-        song: song,
+        song: currentSong ?? song,
         isPlaying: true,
       );
       await PipService.setPlayingState(true);
     } catch (e) {
+      _isBuffering = false;
+      notifyListeners();
       debugPrint('PlayerProvider._playCurrent error: $e');
     }
   }

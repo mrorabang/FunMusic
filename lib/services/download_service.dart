@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
+import 'music_api_service.dart';
 
 class DownloadService with ChangeNotifier {
   static final DownloadService instance = DownloadService._internal();
@@ -52,7 +53,15 @@ class DownloadService with ChangeNotifier {
 
   Future<bool> downloadSong(Song song) async {
     if (isDownloaded(song.id) || isDownloading(song.id)) return true;
-    if (song.streamUrl.isEmpty) return false;
+
+    String downloadUrl = song.streamUrl;
+    if (downloadUrl.isEmpty && song.youtubeId != null) {
+      final resolved = await MusicApiService.resolveStreamUrl(song);
+      if (resolved != null && resolved.isNotEmpty) {
+        downloadUrl = resolved;
+      }
+    }
+    if (downloadUrl.isEmpty) return false;
 
     _downloadProgress[song.id] = 0.0;
     notifyListeners();
@@ -64,12 +73,12 @@ class DownloadService with ChangeNotifier {
         downloadDir.createSync(recursive: true);
       }
 
-      final ext = song.streamUrl.contains('.m4a') ? 'm4a' : 'mp3';
+      final ext = downloadUrl.contains('.m4a') || downloadUrl.contains('mime=audio%2Fmp4') ? 'm4a' : 'mp3';
       final filePath = '${downloadDir.path}/${song.id}.$ext';
       final file = File(filePath);
 
       final client = http.Client();
-      final request = http.Request('GET', Uri.parse(song.streamUrl));
+      final request = http.Request('GET', Uri.parse(downloadUrl));
       final response = await client.send(request);
 
       if (response.statusCode == 200) {

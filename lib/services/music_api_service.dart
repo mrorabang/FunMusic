@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/song.dart';
+import 'youtube_music_service.dart';
 
 enum MusicApiSource {
-  deezer('Deezer API (Mặc định)'),
+  youtube('YouTube Music (Full 100% bài hát)'),
+  deezer('Deezer API (Preview 30s)'),
   itunes('Apple iTunes Search API');
 
   final String displayName;
@@ -12,14 +14,16 @@ enum MusicApiSource {
 }
 
 class MusicApiService {
-  static MusicApiSource currentSource = MusicApiSource.deezer;
+  static MusicApiSource currentSource = MusicApiSource.youtube;
 
   static const String _deezerBaseUrl = 'https://api.deezer.com';
   static const String _itunesBaseUrl = 'https://itunes.apple.com';
 
   /// Tìm kiếm bài hát theo nguồn đang chọn
   static Future<List<Song>> searchSongs(String query, {int limit = 30}) async {
-    if (currentSource == MusicApiSource.itunes) {
+    if (currentSource == MusicApiSource.youtube) {
+      return YouTubeMusicService.searchSongs(query, limit: limit);
+    } else if (currentSource == MusicApiSource.itunes) {
       return _searchItunes(query, limit: limit);
     }
     return _searchDeezer(query, limit: limit);
@@ -27,10 +31,23 @@ class MusicApiService {
 
   /// Lấy danh sách Top Charts
   static Future<List<Song>> getTopChart({int limit = 25}) async {
-    if (currentSource == MusicApiSource.itunes) {
+    if (currentSource == MusicApiSource.youtube) {
+      return YouTubeMusicService.getTopChart(limit: limit);
+    } else if (currentSource == MusicApiSource.itunes) {
       return _searchItunes('Top Hits 2026', limit: limit);
     }
     return _getDeezerTopChart(limit: limit);
+  }
+
+  /// Phân giải link stream (hỗ trợ bóc tách audio stream YouTube full bài)
+  static Future<String?> resolveStreamUrl(Song song) async {
+    if (song.isLocal && song.localFilePath != null) {
+      return song.localFilePath;
+    }
+    if (song.youtubeId != null && song.youtubeId!.isNotEmpty) {
+      return YouTubeMusicService.resolveStreamUrl(song.youtubeId!);
+    }
+    return song.streamUrl;
   }
 
   // --- Deezer Implementation ---
