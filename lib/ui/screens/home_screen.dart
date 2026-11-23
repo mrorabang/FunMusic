@@ -78,76 +78,474 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showApiSourceDialog() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final allSources = MusicApiService.getAllSources();
+            return SafeArea(
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.85,
+                ),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.tune_rounded,
-                        color: Theme.of(context).colorScheme.primary),
-                    const SizedBox(width: 10),
-                    const Text(
-                      'Chọn nguồn API nhạc',
+                    // Header
+                    Row(
+                      children: [
+                        Icon(Icons.tune_rounded,
+                            color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Quản lý nguồn API nhạc',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.of(ctx).pop(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '• Chạm để chuyển đổi nguồn nghe ngay\n• Bấm ⭐ để đặt làm API mặc định mỗi khi vào app',
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Divider(height: 1),
+                    const SizedBox(height: 8),
+
+                    // Danh sách APIs
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: allSources.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final source = allSources[index];
+                          final isSelected =
+                              MusicApiService.currentSourceId == source.id;
+                          final isDefault =
+                              MusicApiService.defaultSourceId == source.id;
+
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Theme.of(context)
+                                      .colorScheme
+                                      .primary
+                                      .withValues(alpha: 0.12)
+                                  : Theme.of(context).colorScheme.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Colors.transparent,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 4),
+                              leading: Icon(
+                                isSelected
+                                    ? Icons.radio_button_checked_rounded
+                                    : Icons.radio_button_off_rounded,
+                                color: isSelected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Colors.grey,
+                              ),
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      source.name,
+                                      style: TextStyle(
+                                        fontWeight: isSelected
+                                            ? FontWeight.bold
+                                            : FontWeight.w600,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                  if (isDefault)
+                                    Container(
+                                      margin: const EdgeInsets.only(left: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                            color: Colors.amber.withValues(alpha: 0.5),
+                                            width: 0.8),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.star_rounded,
+                                              size: 13, color: Colors.amber),
+                                          SizedBox(width: 2),
+                                          Text(
+                                            'Mặc định',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.amber,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  if (source.isCustom)
+                                    Container(
+                                      margin: const EdgeInsets.only(left: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.teal.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                            color: Colors.teal.withValues(alpha: 0.5),
+                                            width: 0.8),
+                                      ),
+                                      child: const Text(
+                                        'Custom',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.tealAccent,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  source.description,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Nút đặt làm mặc định
+                                  IconButton(
+                                    tooltip: isDefault
+                                        ? 'Đang là API mặc định khi mở app'
+                                        : 'Đặt làm API mặc định mỗi khi vào app',
+                                    icon: Icon(
+                                      isDefault
+                                          ? Icons.star_rounded
+                                          : Icons.star_outline_rounded,
+                                      color: isDefault
+                                          ? Colors.amber
+                                          : Colors.grey,
+                                      size: 24,
+                                    ),
+                                    onPressed: () async {
+                                      await MusicApiService.setDefaultSource(
+                                          source.id);
+                                      setModalState(() {});
+                                      setState(() {});
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                                'Đã đặt "${source.name}" làm API mặc định khi mở app!'),
+                                            duration:
+                                                const Duration(seconds: 2),
+                                            behavior: SnackBarBehavior.floating,
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  // Nút xóa nếu là Custom API
+                                  if (source.isCustom)
+                                    IconButton(
+                                      tooltip: 'Xóa API tùy chỉnh này',
+                                      icon: const Icon(
+                                        Icons.delete_outline_rounded,
+                                        color: Colors.redAccent,
+                                        size: 22,
+                                      ),
+                                      onPressed: () async {
+                                        final confirm =
+                                            await _showDeleteConfirmDialog(
+                                                ctx, source);
+                                        if (confirm == true) {
+                                          await MusicApiService
+                                              .deleteCustomSource(source.id);
+                                          setModalState(() {});
+                                          setState(() {});
+                                          _loadData(_searchController
+                                                  .text.isNotEmpty
+                                              ? _searchController.text
+                                              : _currentFilter);
+                                        }
+                                      },
+                                    ),
+                                ],
+                              ),
+                              onTap: () {
+                                setState(() {
+                                  MusicApiService.selectSource(source.id);
+                                });
+                                Navigator.of(ctx).pop();
+                                _loadData(_searchController.text.isNotEmpty
+                                    ? _searchController.text
+                                    : _currentFilter);
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+                    // Nút thêm API mới
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('Thêm API mới (Custom API)'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        onPressed: () {
+                          _showAddCustomApiDialog(context, onAdded: () {
+                            setModalState(() {});
+                            setState(() {});
+                          });
+                        },
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                ...MusicApiSource.values.map((source) {
-                  final isSelected = MusicApiService.currentSource == source;
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      isSelected
-                          ? Icons.radio_button_checked_rounded
-                          : Icons.radio_button_off_rounded,
-                      color: isSelected
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.grey,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<bool?> _showDeleteConfirmDialog(
+      BuildContext context, ApiSourceItem source) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent),
+            SizedBox(width: 8),
+            Text('Xóa API tùy chỉnh'),
+          ],
+        ),
+        content: Text(
+          'Bạn có chắc chắn muốn xóa nguồn API "${source.name}" không?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dCtx).pop(false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.of(dCtx).pop(true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddCustomApiDialog(BuildContext context,
+      {required VoidCallback onAdded}) {
+    final nameCtrl = TextEditingController();
+    final urlCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dCtx) {
+        return AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(Icons.add_link_rounded,
+                  color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 8),
+              const Text('Thêm API mới', style: TextStyle(fontSize: 18)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Notice Format
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.amber.withValues(alpha: 0.3),
+                      width: 1,
                     ),
-                    title: Text(
-                      source.displayName,
-                      style: TextStyle(
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.info_outline_rounded,
+                              color: Colors.amber, size: 18),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Quy chuẩn định dạng API (Format Notice)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.amber,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '• Phương thức: HTTP GET\n'
+                        '• URL Endpoint mẫu:\n'
+                        '  https://api.domain.com/search?q={query}&limit={limit}\n'
+                        '  (hoặc tự động gắn ?q=...&limit=...)\n'
+                        '• Định dạng JSON phản hồi:\n'
+                        '  Mảng [ { ... } ] hoặc đối tượng có key "results", "data", "tracks".\n'
+                        '• Mỗi bài hát cần hỗ trợ:\n'
+                        '  - id: Mã bài hát (số hoặc chuỗi)\n'
+                        '  - title: Tên bài hát (bắt buộc)\n'
+                        '  - artist: Tên nghệ sĩ/ca sĩ\n'
+                        '  - stream_url: Link stream nhạc (.mp3, .m4a, aac...)\n'
+                        '  - cover: Link ảnh bìa album/bài hát (tùy chọn)\n'
+                        '  - duration: Thời lượng (giây hoặc mm:ss / hh:mm:ss)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.4,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Tên hiển thị API *',
+                    hintText: 'VD: Server Nhạc Cá Nhân',
+                    prefixIcon: const Icon(Icons.label_outline_rounded),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    subtitle: Text(
-                      source == MusicApiSource.soundcloud
-                          ? 'SoundCloud (Full bài hát 100%, stream tốc độ cao)'
-                          : source == MusicApiSource.youtube
-                              ? 'YouTube Music (Full 100% bài hát, stream m4a)'
-                              : source == MusicApiSource.deezer
-                                  ? 'Server Deezer (mp3 preview 30s, ảnh HD)'
-                                  : 'Server Apple iTunes (m4a preview 30s)',
-                      style: const TextStyle(fontSize: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: urlCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'URL Search Endpoint *',
+                    hintText: 'https://api.example.com/search',
+                    prefixIcon: const Icon(Icons.link_rounded),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    onTap: () {
-                      setState(() {
-                        MusicApiService.currentSource = source;
-                      });
-                      Navigator.of(ctx).pop();
-                      _loadData(_searchController.text.isNotEmpty
-                          ? _searchController.text
-                          : _currentFilter);
-                    },
-                  );
-                }),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
+                  ),
+                  keyboardType: TextInputType.url,
+                ),
               ],
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dCtx).pop(),
+              child: const Text('Đóng'),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.save_rounded, size: 18),
+              label: const Text('Lưu API'),
+              onPressed: () async {
+                final name = nameCtrl.text.trim();
+                final url = urlCtrl.text.trim();
+                if (name.isEmpty || url.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Vui lòng nhập đầy đủ Tên và URL API!'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+                if (!url.startsWith('http://') &&
+                    !url.startsWith('https://')) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                          'URL API phải bắt đầu bằng http:// hoặc https://'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+
+                await MusicApiService.addCustomSource(name, url);
+                onAdded();
+                if (dCtx.mounted) {
+                  Navigator.of(dCtx).pop();
+                }
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Đã thêm API "$name" thành công!'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              },
+            ),
+          ],
         );
       },
     );
@@ -253,13 +651,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(width: 10),
             Text(
-              MusicApiService.currentSource == MusicApiSource.soundcloud
-                  ? 'Q Music (SoundCloud)'
-                  : MusicApiService.currentSource == MusicApiSource.youtube
-                      ? 'Q Music (YouTube)'
-                      : MusicApiService.currentSource == MusicApiSource.deezer
-                          ? 'Q Music (Deezer)'
-                          : 'Q Music (iTunes)',
+              'Q Music (${MusicApiService.currentSourceName})',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
           ],

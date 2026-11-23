@@ -5,6 +5,7 @@ import 'providers/player_provider.dart';
 import 'services/download_service.dart';
 import 'services/local_audio_stream_server.dart';
 import 'services/local_music_service.dart';
+import 'services/music_api_service.dart';
 import 'services/notification_service.dart';
 import 'services/playlist_service.dart';
 import 'ui/screens/home_screen.dart';
@@ -22,6 +23,7 @@ void main() async {
   await DownloadService.instance.init();
   await PlaylistService.instance.init();
   await LocalMusicService.instance.init();
+  await MusicApiService.init();
 
   runApp(
     MultiProvider(

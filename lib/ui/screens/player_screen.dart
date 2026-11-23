@@ -37,10 +37,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.dispose();
   }
 
-  String _formatDuration(Duration d) {
+  String _formatDuration(Duration d, {bool forceHours = false}) {
+    if (d.inSeconds <= 0) {
+      return forceHours ? '0:00:00' : '00:00';
+    }
     String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final hours = d.inHours;
     final minutes = twoDigits(d.inMinutes.remainder(60));
     final seconds = twoDigits(d.inSeconds.remainder(60));
+    if (hours > 0 || forceHours) {
+      return '$hours:$minutes:$seconds';
+    }
     return '$minutes:$seconds';
   }
 
@@ -352,7 +359,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          _formatDuration(player.position),
+                          _formatDuration(player.position,
+                              forceHours: player.duration.inHours > 0),
                           style: TextStyle(
                             fontSize: 12,
                             color:
