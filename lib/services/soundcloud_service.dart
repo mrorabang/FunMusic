@@ -79,13 +79,23 @@ class SoundCloudService {
             '';
         final coverUrl = rawArtwork.replaceAll('-large', '-t500x500');
 
-        // Tìm luồng phát stream URL trong transcodings
+        // Tìm luồng phát stream URL trong transcodings (ưu tiên mp4a HLS hoặc progressive, tránh format mpegurl bị 404)
         final transcodings = item['media']?['transcodings'] as List? ?? [];
         if (transcodings.isEmpty) continue;
 
-        // Ưu tiên HLS hoặc progressive
-        final trans = transcodings.first;
-        final transUrl = trans['url']?.toString() ?? '';
+        dynamic selectedTrans;
+        for (final t in transcodings) {
+          final format = t['format'] as Map<String, dynamic>?;
+          final mime = format?['mime_type']?.toString() ?? '';
+          final protocol = format?['protocol']?.toString() ?? '';
+          if (mime.contains('mp4a') || protocol == 'progressive') {
+            selectedTrans = t;
+            break;
+          }
+        }
+        selectedTrans ??= transcodings.first;
+
+        final transUrl = selectedTrans['url']?.toString() ?? '';
         if (transUrl.isEmpty) continue;
 
         final rawId = item['id'];

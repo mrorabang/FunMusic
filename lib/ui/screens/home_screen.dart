@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import '../../models/song.dart';
 import '../../providers/player_provider.dart';
 import '../../services/download_service.dart';
@@ -154,52 +155,74 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Column(
-        children: [
-          Expanded(
-            child: IndexedStack(
-              index: _currentTabIndex,
-              children: [
-                // Tab 0: Khám phá trực tuyến
-                _buildExploreTab(context),
-                // Tab 1: Quản lý Playlist
-                const PlaylistScreen(),
-                // Tab 2: Thư viện máy & Tải về
-                const LocalMusicScreen(),
-              ],
+    final player = context.watch<PlayerProvider>();
+
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          body: Column(
+            children: [
+              Expanded(
+                child: IndexedStack(
+                  index: _currentTabIndex,
+                  children: [
+                    // Tab 0: Khám phá trực tuyến
+                    _buildExploreTab(context),
+                    // Tab 1: Quản lý Playlist
+                    const PlaylistScreen(),
+                    // Tab 2: Thư viện máy & Tải về
+                    const LocalMusicScreen(),
+                  ],
+                ),
+              ),
+              // Mini Player luôn ghim phía trên thanh điều hướng
+              const MiniPlayer(),
+            ],
+          ),
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: _currentTabIndex,
+            onDestinationSelected: (idx) {
+              setState(() {
+                _currentTabIndex = idx;
+              });
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.explore_outlined),
+                selectedIcon: Icon(Icons.explore_rounded),
+                label: 'Khám phá',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.queue_music_outlined),
+                selectedIcon: Icon(Icons.queue_music_rounded),
+                label: 'Playlist',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.folder_outlined),
+                selectedIcon: Icon(Icons.folder_rounded),
+                label: 'Thiết bị & Tải về',
+              ),
+            ],
+          ),
+        ),
+        // Persistent YouTube IFrame Engine (hoạt động ngầm xuyên suốt ứng dụng)
+        Positioned(
+          bottom: 0,
+          right: 0,
+          width: 200,
+          height: 200,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: 0.001,
+              child: YoutubePlayer(
+                controller: player.ytController,
+                aspectRatio: 16 / 9,
+              ),
             ),
           ),
-          // Mini Player luôn ghim phía trên thanh điều hướng
-          const MiniPlayer(),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentTabIndex,
-        onDestinationSelected: (idx) {
-          setState(() {
-            _currentTabIndex = idx;
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.explore_outlined),
-            selectedIcon: Icon(Icons.explore_rounded),
-            label: 'Khám phá',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.queue_music_outlined),
-            selectedIcon: Icon(Icons.queue_music_rounded),
-            label: 'Playlist',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder_rounded),
-            label: 'Thiết bị & Tải về',
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

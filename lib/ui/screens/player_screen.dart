@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/player_provider.dart';
 import '../../services/download_service.dart';
 import 'playlist_screen.dart';
@@ -148,6 +149,18 @@ class _PlayerScreenState extends State<PlayerScreen>
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
+          // Xem trên YouTube (nếu là bài hát từ YouTube)
+          if (song.youtubeId != null && song.youtubeId!.isNotEmpty)
+            IconButton(
+              tooltip: 'Mở xem trên YouTube',
+              icon: const Icon(Icons.smart_display_outlined, size: 24),
+              onPressed: () async {
+                final uri = Uri.parse('https://www.youtube.com/watch?v=${song.youtubeId}');
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
           // Thêm vào Playlist
           IconButton(
             tooltip: 'Thêm bài hát vào Playlist',

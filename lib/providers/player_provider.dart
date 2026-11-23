@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart' as ja;
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import '../models/song.dart';
 import '../services/music_api_service.dart';
 import '../services/notification_service.dart';
@@ -18,6 +19,7 @@ enum LoopMode {
 
 class PlayerProvider with ChangeNotifier {
   final ja.AudioPlayer _player = ja.AudioPlayer();
+  late final YoutubePlayerController _ytController;
 
   List<Song> _playlist = [];
   int _currentIndex = -1;
@@ -27,14 +29,24 @@ class PlayerProvider with ChangeNotifier {
   Duration _duration = Duration.zero;
   bool _isBuffering = false;
 
+  PlayerState _ytPlayerState = PlayerState.unknown;
+  bool _isYoutubeActive = false;
+
+  StreamSubscription? _ytStateSub;
+  StreamSubscription? _ytVideoSub;
+
   LoopMode _loopMode = LoopMode.all;
   bool _isShuffle = false;
 
   PlayerProvider() {
     _initAudioListeners();
+    _initYoutubeController();
   }
 
   // Getters
+  YoutubePlayerController get ytController => _ytController;
+  bool get isYoutubeActive => _isYoutubeActive;
+
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
   String? get activePlaylistName => _activePlaylistName;
@@ -42,16 +54,32 @@ class PlayerProvider with ChangeNotifier {
       (_currentIndex >= 0 && _currentIndex < _playlist.length)
           ? _playlist[_currentIndex]
           : null;
-  bool get isPlaying =>
-      _player.playing &&
-      _player.processingState != ja.ProcessingState.completed;
-  bool get isPaused =>
-      !_player.playing &&
-      _player.processingState != ja.ProcessingState.idle;
-  bool get isBuffering =>
-      _isBuffering ||
-      _player.processingState == ja.ProcessingState.buffering ||
-      _player.processingState == ja.ProcessingState.loading;
+
+  bool get isPlaying {
+    if (_isYoutubeActive) {
+      return _ytPlayerState == PlayerState.playing;
+    }
+    return _player.playing &&
+        _player.processingState != ja.ProcessingState.completed;
+  }
+
+  bool get isPaused {
+    if (_isYoutubeActive) {
+      return _ytPlayerState == PlayerState.paused;
+    }
+    return !_player.playing &&
+        _player.processingState != ja.ProcessingState.idle;
+  }
+
+  bool get isBuffering {
+    if (_isBuffering) return true;
+    if (_isYoutubeActive) {
+      return _ytPlayerState == PlayerState.buffering;
+    }
+    return _player.processingState == ja.ProcessingState.buffering ||
+        _player.processingState == ja.ProcessingState.loading;
+  }
+
   Duration get position => _position;
   Duration get duration => _duration;
   LoopMode get loopMode => _loopMode;
@@ -59,6 +87,8 @@ class PlayerProvider with ChangeNotifier {
 
   void _initAudioListeners() {
     _player.playerStateStream.listen((state) {
+      if (_isYoutubeActive) return;
+
       final playing = state.playing &&
           state.processingState != ja.ProcessingState.completed;
       PipService.setPlayingState(playing);
@@ -75,15 +105,59 @@ class PlayerProvider with ChangeNotifier {
     });
 
     _player.positionStream.listen((pos) {
+      if (_isYoutubeActive) return;
       _position = pos;
       notifyListeners();
     });
 
     _player.durationStream.listen((dur) {
+      if (_isYoutubeActive) return;
       if (dur != null) {
         _duration = dur;
         notifyListeners();
       }
+    });
+  }
+
+  void _initYoutubeController() {
+    _ytController = YoutubePlayerController(
+      params: const YoutubePlayerParams(
+        showControls: false,
+        showFullscreenButton: false,
+        playsInline: true,
+        mute: false,
+        enableCaption: false,
+        showVideoAnnotations: false,
+        privacyEnhancedMode: true,
+        videoStateUpdateInterval: 250,
+      ),
+    );
+
+    _ytStateSub = _ytController.stream.listen((val) {
+      if (!_isYoutubeActive) return;
+
+      _ytPlayerState = val.playerState;
+      final playing = val.playerState == PlayerState.playing;
+      PipService.setPlayingState(playing);
+      if (currentSong != null) {
+        NotificationService.showMediaNotification(
+          song: currentSong!,
+          isPlaying: playing,
+        );
+      }
+      if (val.playerState == PlayerState.ended) {
+        _handleSongCompletion();
+      }
+      if (val.metaData.duration.inSeconds > 0) {
+        _duration = val.metaData.duration;
+      }
+      notifyListeners();
+    });
+
+    _ytVideoSub = _ytController.videoStateStream.listen((vState) {
+      if (!_isYoutubeActive) return;
+      _position = vState.position;
+      notifyListeners();
     });
   }
 
@@ -92,7 +166,11 @@ class PlayerProvider with ChangeNotifier {
 
     if (_loopMode == LoopMode.single) {
       await seek(Duration.zero);
-      await _player.play();
+      if (_isYoutubeActive) {
+        await _ytController.playVideo();
+      } else {
+        await _player.play();
+      }
       return;
     }
 
@@ -128,51 +206,71 @@ class PlayerProvider with ChangeNotifier {
     if (song == null) return;
 
     try {
-      await _player.stop();
       _position = Duration.zero;
-      _duration = Duration.zero;
+      _duration = song.duration > 0
+          ? Duration(seconds: song.duration)
+          : Duration.zero;
 
-      if (song.isLocal && song.localFilePath != null) {
-        await _player.setFilePath(song.localFilePath!);
-        await _player.play();
+      if (song.youtubeId != null && song.youtubeId!.isNotEmpty) {
+        _isYoutubeActive = true;
+        await _player.stop();
+        _isBuffering = true;
+        notifyListeners();
+
+        debugPrint('Playing YouTube video via IFrame: ${song.youtubeId}');
+        await _ytController.loadVideoById(videoId: song.youtubeId!);
+        await _ytController.playVideo();
+        _isBuffering = false;
+        notifyListeners();
       } else {
-        String playUrl = song.streamUrl;
-        if (playUrl.isEmpty &&
-            (song.youtubeId != null || song.soundcloudTranscodingUrl != null)) {
-          _isBuffering = true;
-          notifyListeners();
+        _isYoutubeActive = false;
+        try {
+          await _ytController.pauseVideo();
+        } catch (_) {}
 
-          final resolved = await MusicApiService.resolveStreamUrl(song);
-          if (resolved != null && resolved.isNotEmpty) {
-            playUrl = resolved;
-            if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
-              _playlist[_currentIndex] = song.copyWith(streamUrl: resolved);
-            }
-          }
-          _isBuffering = false;
-          notifyListeners();
-        }
+        await _player.stop();
 
-        if (playUrl.isNotEmpty) {
-          debugPrint('Loading ExoPlayer with URL: $playUrl');
-          await _player
-              .setUrl(
-            playUrl,
-            headers: {
-              'User-Agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-          )
-              .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () {
-              debugPrint('Audio loading timed out for ${song.title}');
-              throw TimeoutException('Không thể kết nối luồng phát âm thanh');
-            },
-          );
+        if (song.isLocal && song.localFilePath != null) {
+          await _player.setFilePath(song.localFilePath!);
           await _player.play();
         } else {
-          debugPrint('Cannot play song: streamUrl is empty for ${song.title}');
+          String playUrl = song.streamUrl;
+          if (playUrl.isEmpty && (song.soundcloudTranscodingUrl != null)) {
+            _isBuffering = true;
+            notifyListeners();
+
+            final resolved = await MusicApiService.resolveStreamUrl(song);
+            if (resolved != null && resolved.isNotEmpty) {
+              playUrl = resolved;
+              if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
+                _playlist[_currentIndex] = song.copyWith(streamUrl: resolved);
+              }
+            }
+            _isBuffering = false;
+            notifyListeners();
+          }
+
+          if (playUrl.isNotEmpty) {
+            debugPrint('Loading ExoPlayer with URL: $playUrl');
+            await _player
+                .setUrl(
+              playUrl,
+              headers: {
+                'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              },
+            )
+                .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                debugPrint('Audio loading timed out for ${song.title}');
+                throw TimeoutException('Không thể kết nối luồng phát âm thanh');
+              },
+            );
+            await _player.play();
+          } else {
+            debugPrint('Cannot play song: streamUrl is empty for ${song.title}');
+          }
         }
       }
 
@@ -190,13 +288,21 @@ class PlayerProvider with ChangeNotifier {
 
   Future<void> togglePlayPause() async {
     if (currentSong == null) return;
-    if (_player.playing) {
-      await _player.pause();
-    } else {
-      if (_player.processingState == ja.ProcessingState.completed) {
-        await seek(Duration.zero);
+    if (_isYoutubeActive) {
+      if (_ytPlayerState == PlayerState.playing) {
+        await _ytController.pauseVideo();
+      } else {
+        await _ytController.playVideo();
       }
-      await _player.play();
+    } else {
+      if (_player.playing) {
+        await _player.pause();
+      } else {
+        if (_player.processingState == ja.ProcessingState.completed) {
+          await seek(Duration.zero);
+        }
+        await _player.play();
+      }
     }
   }
 
@@ -218,7 +324,11 @@ class PlayerProvider with ChangeNotifier {
         if (_loopMode == LoopMode.all) {
           _currentIndex = 0;
         } else if (autoTriggered && _loopMode == LoopMode.none) {
-          await _player.stop();
+          if (_isYoutubeActive) {
+            await _ytController.stopVideo();
+          } else {
+            await _player.stop();
+          }
           _position = Duration.zero;
           notifyListeners();
           return;
@@ -251,7 +361,16 @@ class PlayerProvider with ChangeNotifier {
   }
 
   Future<void> seek(Duration newPosition) async {
-    await _player.seek(newPosition);
+    if (_isYoutubeActive) {
+      await _ytController.seekTo(
+        seconds: newPosition.inSeconds.toDouble(),
+        allowSeekAhead: true,
+      );
+      _position = newPosition;
+      notifyListeners();
+    } else {
+      await _player.seek(newPosition);
+    }
   }
 
   void cycleLoopMode() {
@@ -276,6 +395,9 @@ class PlayerProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _ytStateSub?.cancel();
+    _ytVideoSub?.cancel();
+    _ytController.close();
     NotificationService.cancel();
     _player.dispose();
     super.dispose();
