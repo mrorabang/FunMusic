@@ -128,6 +128,21 @@ class SoundCloudService {
     return searchSongs('Top Hits Việt Nam 2026', limit: limit);
   }
 
+  /// Tìm link transcoding HLS/MP4 hợp lệ cho một truy vấn bài hát bất kỳ
+  static Future<String?> findTranscodingForSearch(String query) async {
+    try {
+      final songs = await searchSongs(query, limit: 3);
+      if (songs.isNotEmpty &&
+          songs.first.soundcloudTranscodingUrl != null &&
+          songs.first.soundcloudTranscodingUrl!.isNotEmpty) {
+        return songs.first.soundcloudTranscodingUrl;
+      }
+    } catch (e) {
+      debugPrint('SoundCloudService.findTranscodingForSearch error: $e');
+    }
+    return null;
+  }
+
   /// Phân giải link stream phát trực tiếp
   static Future<String?> resolveStreamUrl(String transcodingUrl) async {
     try {
