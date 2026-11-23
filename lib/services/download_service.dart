@@ -55,7 +55,8 @@ class DownloadService with ChangeNotifier {
     if (isDownloaded(song.id) || isDownloading(song.id)) return true;
 
     String downloadUrl = song.streamUrl;
-    if (downloadUrl.isEmpty && song.youtubeId != null) {
+    if (downloadUrl.isEmpty &&
+        (song.youtubeId != null || song.soundcloudTranscodingUrl != null)) {
       final resolved = await MusicApiService.resolveStreamUrl(song);
       if (resolved != null && resolved.isNotEmpty) {
         downloadUrl = resolved;

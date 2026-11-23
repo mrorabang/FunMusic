@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:just_audio/just_audio.dart' as ja;
 import '../models/song.dart';
 import '../services/music_api_service.dart';
 import '../services/notification_service.dart';
@@ -17,13 +17,12 @@ enum LoopMode {
 }
 
 class PlayerProvider with ChangeNotifier {
-  final AudioPlayer _player = AudioPlayer();
+  final ja.AudioPlayer _player = ja.AudioPlayer();
 
   List<Song> _playlist = [];
   int _currentIndex = -1;
   String? _activePlaylistName;
 
-  PlayerState _state = PlayerState.stopped;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   bool _isBuffering = false;
@@ -32,7 +31,6 @@ class PlayerProvider with ChangeNotifier {
   bool _isShuffle = false;
 
   PlayerProvider() {
-    _initAudioSession();
     _initAudioListeners();
   }
 
@@ -44,62 +42,48 @@ class PlayerProvider with ChangeNotifier {
       (_currentIndex >= 0 && _currentIndex < _playlist.length)
           ? _playlist[_currentIndex]
           : null;
-  bool get isPlaying => _state == PlayerState.playing;
-  bool get isPaused => _state == PlayerState.paused;
-  bool get isBuffering => _isBuffering;
+  bool get isPlaying =>
+      _player.playing &&
+      _player.processingState != ja.ProcessingState.completed;
+  bool get isPaused =>
+      !_player.playing &&
+      _player.processingState != ja.ProcessingState.idle;
+  bool get isBuffering =>
+      _isBuffering ||
+      _player.processingState == ja.ProcessingState.buffering ||
+      _player.processingState == ja.ProcessingState.loading;
   Duration get position => _position;
   Duration get duration => _duration;
   LoopMode get loopMode => _loopMode;
   bool get isShuffle => _isShuffle;
 
-  Future<void> _initAudioSession() async {
-    try {
-      await AudioPlayer.global.setAudioContext(AudioContext(
-        android: const AudioContextAndroid(
-          isSpeakerphoneOn: false,
-          stayAwake: true,
-          contentType: AndroidContentType.music,
-          usageType: AndroidUsageType.media,
-          audioFocus: AndroidAudioFocus.gain,
-        ),
-        iOS: AudioContextIOS(
-          category: AVAudioSessionCategory.playback,
-          options: const {
-            AVAudioSessionOptions.defaultToSpeaker,
-          },
-        ),
-      ));
-    } catch (e) {
-      debugPrint('AudioContext error: $e');
-    }
-  }
-
   void _initAudioListeners() {
-    _player.onPlayerStateChanged.listen((state) {
-      _state = state;
-      PipService.setPlayingState(state == PlayerState.playing);
+    _player.playerStateStream.listen((state) {
+      final playing = state.playing &&
+          state.processingState != ja.ProcessingState.completed;
+      PipService.setPlayingState(playing);
       if (currentSong != null) {
         NotificationService.showMediaNotification(
           song: currentSong!,
-          isPlaying: state == PlayerState.playing,
+          isPlaying: playing,
         );
+      }
+      if (state.processingState == ja.ProcessingState.completed) {
+        _handleSongCompletion();
       }
       notifyListeners();
     });
 
-    _player.onPositionChanged.listen((pos) {
+    _player.positionStream.listen((pos) {
       _position = pos;
       notifyListeners();
     });
 
-    _player.onDurationChanged.listen((dur) {
-      _duration = dur;
-      notifyListeners();
-    });
-
-    // Tự động chuyển bài tiếp theo khi hết bài
-    _player.onPlayerComplete.listen((_) {
-      _handleSongCompletion();
+    _player.durationStream.listen((dur) {
+      if (dur != null) {
+        _duration = dur;
+        notifyListeners();
+      }
     });
   }
 
@@ -107,15 +91,11 @@ class PlayerProvider with ChangeNotifier {
     if (_playlist.isEmpty) return;
 
     if (_loopMode == LoopMode.single) {
-      // Lặp lại bài đang phát
       await seek(Duration.zero);
-      if (currentSong != null) {
-        await _playCurrent();
-      }
+      await _player.play();
       return;
     }
 
-    // Tự động chuyển bài kế tiếp
     await playNext(autoTriggered: true);
   }
 
@@ -153,10 +133,12 @@ class PlayerProvider with ChangeNotifier {
       _duration = Duration.zero;
 
       if (song.isLocal && song.localFilePath != null) {
-        await _player.play(DeviceFileSource(song.localFilePath!));
+        await _player.setFilePath(song.localFilePath!);
+        await _player.play();
       } else {
         String playUrl = song.streamUrl;
-        if (playUrl.isEmpty && song.youtubeId != null) {
+        if (playUrl.isEmpty &&
+            (song.youtubeId != null || song.soundcloudTranscodingUrl != null)) {
           _isBuffering = true;
           notifyListeners();
 
@@ -172,13 +154,23 @@ class PlayerProvider with ChangeNotifier {
         }
 
         if (playUrl.isNotEmpty) {
-          await _player.play(UrlSource(playUrl)).timeout(
-            const Duration(seconds: 6),
+          debugPrint('Loading ExoPlayer with URL: $playUrl');
+          await _player
+              .setUrl(
+            playUrl,
+            headers: {
+              'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+          )
+              .timeout(
+            const Duration(seconds: 10),
             onTimeout: () {
-              debugPrint('Audio playback timed out for ${song.title}');
+              debugPrint('Audio loading timed out for ${song.title}');
               throw TimeoutException('Không thể kết nối luồng phát âm thanh');
             },
           );
+          await _player.play();
         } else {
           debugPrint('Cannot play song: streamUrl is empty for ${song.title}');
         }
@@ -191,7 +183,6 @@ class PlayerProvider with ChangeNotifier {
       await PipService.setPlayingState(true);
     } catch (e) {
       _isBuffering = false;
-      _state = PlayerState.stopped;
       notifyListeners();
       debugPrint('PlayerProvider._playCurrent error: $e');
     }
@@ -199,14 +190,13 @@ class PlayerProvider with ChangeNotifier {
 
   Future<void> togglePlayPause() async {
     if (currentSong == null) return;
-    if (isPlaying) {
+    if (_player.playing) {
       await _player.pause();
     } else {
-      if (_state == PlayerState.paused) {
-        await _player.resume();
-      } else {
-        await _playCurrent();
+      if (_player.processingState == ja.ProcessingState.completed) {
+        await seek(Duration.zero);
       }
+      await _player.play();
     }
   }
 
@@ -225,11 +215,9 @@ class PlayerProvider with ChangeNotifier {
       if (_currentIndex < _playlist.length - 1) {
         _currentIndex++;
       } else {
-        // Hết danh sách playlist
         if (_loopMode == LoopMode.all) {
-          _currentIndex = 0; // Quay về bài đầu tiên của playlist
+          _currentIndex = 0;
         } else if (autoTriggered && _loopMode == LoopMode.none) {
-          // Không lặp và đã hết bài: dừng phát
           await _player.stop();
           _position = Duration.zero;
           notifyListeners();

@@ -2,26 +2,30 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/song.dart';
+import 'soundcloud_service.dart';
 import 'youtube_music_service.dart';
 
 enum MusicApiSource {
-  youtube('YouTube Music (Full 100% bài hát)'),
+  soundcloud('SoundCloud (Full 100% bài hát)'),
   deezer('Deezer API (Preview 30s)'),
-  itunes('Apple iTunes Search API');
+  itunes('Apple iTunes Search API'),
+  youtube('YouTube Music (Beta)');
 
   final String displayName;
   const MusicApiSource(this.displayName);
 }
 
 class MusicApiService {
-  static MusicApiSource currentSource = MusicApiSource.youtube;
+  static MusicApiSource currentSource = MusicApiSource.soundcloud;
 
   static const String _deezerBaseUrl = 'https://api.deezer.com';
   static const String _itunesBaseUrl = 'https://itunes.apple.com';
 
   /// Tìm kiếm bài hát theo nguồn đang chọn
   static Future<List<Song>> searchSongs(String query, {int limit = 30}) async {
-    if (currentSource == MusicApiSource.youtube) {
+    if (currentSource == MusicApiSource.soundcloud) {
+      return SoundCloudService.searchSongs(query, limit: limit);
+    } else if (currentSource == MusicApiSource.youtube) {
       return YouTubeMusicService.searchSongs(query, limit: limit);
     } else if (currentSource == MusicApiSource.itunes) {
       return _searchItunes(query, limit: limit);
@@ -31,7 +35,9 @@ class MusicApiService {
 
   /// Lấy danh sách Top Charts
   static Future<List<Song>> getTopChart({int limit = 25}) async {
-    if (currentSource == MusicApiSource.youtube) {
+    if (currentSource == MusicApiSource.soundcloud) {
+      return SoundCloudService.getTopChart(limit: limit);
+    } else if (currentSource == MusicApiSource.youtube) {
       return YouTubeMusicService.getTopChart(limit: limit);
     } else if (currentSource == MusicApiSource.itunes) {
       return _searchItunes('Top Hits 2026', limit: limit);
@@ -39,10 +45,15 @@ class MusicApiService {
     return _getDeezerTopChart(limit: limit);
   }
 
-  /// Phân giải link stream (hỗ trợ bóc tách audio stream YouTube full bài)
+  /// Phân giải link stream (hỗ trợ phát trực tuyến full bài SoundCloud & YouTube)
   static Future<String?> resolveStreamUrl(Song song) async {
     if (song.isLocal && song.localFilePath != null) {
       return song.localFilePath;
+    }
+    if (song.soundcloudTranscodingUrl != null &&
+        song.soundcloudTranscodingUrl!.isNotEmpty) {
+      return SoundCloudService.resolveStreamUrl(
+          song.soundcloudTranscodingUrl!);
     }
     if (song.youtubeId != null && song.youtubeId!.isNotEmpty) {
       return YouTubeMusicService.resolveStreamUrl(song.youtubeId!);

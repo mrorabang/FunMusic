@@ -9,6 +9,7 @@ class Song {
   final bool isLocal;
   final String? localFilePath;
   final String? youtubeId;
+  final String? soundcloudTranscodingUrl;
 
   Song({
     required this.id,
@@ -21,6 +22,7 @@ class Song {
     this.isLocal = false,
     this.localFilePath,
     this.youtubeId,
+    this.soundcloudTranscodingUrl,
   });
 
   Song copyWith({
@@ -34,6 +36,7 @@ class Song {
     bool? isLocal,
     String? localFilePath,
     String? youtubeId,
+    String? soundcloudTranscodingUrl,
   }) {
     return Song(
       id: id ?? this.id,
@@ -46,6 +49,7 @@ class Song {
       isLocal: isLocal ?? this.isLocal,
       localFilePath: localFilePath ?? this.localFilePath,
       youtubeId: youtubeId ?? this.youtubeId,
+      soundcloudTranscodingUrl: soundcloudTranscodingUrl ?? this.soundcloudTranscodingUrl,
     );
   }
 
@@ -117,6 +121,7 @@ class Song {
       isLocal: json['isLocal'] == true,
       localFilePath: json['localFilePath']?.toString(),
       youtubeId: json['youtubeId']?.toString(),
+      soundcloudTranscodingUrl: json['soundcloudTranscodingUrl']?.toString(),
     );
   }
 
@@ -132,6 +137,7 @@ class Song {
       'isLocal': isLocal,
       'localFilePath': localFilePath,
       'youtubeId': youtubeId,
+      'soundcloudTranscodingUrl': soundcloudTranscodingUrl,
     };
   }
 }
