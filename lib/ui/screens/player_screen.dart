@@ -2,6 +2,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/player_provider.dart';
+import '../../services/download_service.dart';
+import '../../services/pip_service.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -44,6 +46,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
+    final downloadService = context.watch<DownloadService>();
     final song = player.currentSong;
 
     if (player.isPlaying && !_discAnimController.isAnimating) {
@@ -59,6 +62,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       );
     }
 
+    final isDownloaded = downloadService.isDownloaded(song.id);
+    final isDownloading = downloadService.isDownloading(song.id);
+    final progress = downloadService.getProgress(song.id);
+
     final totalSeconds = player.duration.inSeconds.toDouble();
     final currentSeconds = player.position.inSeconds.toDouble().clamp(
           0.0,
@@ -66,7 +73,42 @@ class _PlayerScreenState extends State<PlayerScreen>
         );
 
     final double screenWidth = MediaQuery.of(context).size.width;
-    final double discSize = (screenWidth * 0.72).clamp(220.0, 320.0);
+    final double screenHeight = MediaQuery.of(context).size.height;
+    final bool isSmallScreen = screenHeight < 350; // In PiP mode!
+    final double discSize = (screenWidth * 0.70).clamp(180.0, 300.0);
+
+    // If device enters PiP mode, show compact view
+    if (isSmallScreen) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ClipOval(
+                child: CachedNetworkImage(
+                  imageUrl: song.coverUrl,
+                  width: 80,
+                  height: 80,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 16),
+              IconButton(
+                icon: Icon(
+                  player.isPlaying
+                      ? Icons.pause_circle_filled_rounded
+                      : Icons.play_circle_fill_rounded,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                onPressed: () => player.togglePlayPause(),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -77,6 +119,63 @@ class _PlayerScreenState extends State<PlayerScreen>
           icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 36),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          // Nút kích hoạt PiP
+          IconButton(
+            tooltip: 'Phát PiP thu nhỏ ra màn hình chính',
+            icon: const Icon(Icons.picture_in_picture_alt_rounded, size: 24),
+            onPressed: () async {
+              final ok = await PipService.enterPip();
+              if (!ok && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Chế độ PiP được kích hoạt tự động khi bạn bấm phím Home'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+          ),
+          // Nút Download
+          IconButton(
+            tooltip: isDownloaded ? 'Đã tải về máy' : 'Tải bài hát về máy',
+            icon: isDownloading
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 2.5,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  )
+                : Icon(
+                    isDownloaded
+                        ? Icons.download_done_rounded
+                        : Icons.download_rounded,
+                    color: isDownloaded
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                    size: 26,
+                  ),
+            onPressed: isDownloaded || isDownloading
+                ? null
+                : () async {
+                    final success = await downloadService.downloadSong(song);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(success
+                              ? 'Đã tải thành công "${song.title}"'
+                              : 'Tải bài hát thất bại'),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+          ),
+          const SizedBox(width: 8),
+        ],
         title: Column(
           children: [
             Text(
@@ -90,7 +189,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             ),
             const SizedBox(height: 2),
             Text(
-              song.album.isNotEmpty ? song.album : 'Deezer Music',
+              song.album.isNotEmpty ? song.album : 'Music Player',
               style: TextStyle(
                 fontSize: 13,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -134,20 +233,25 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                     child: Center(
                       child: ClipOval(
-                        child: CachedNetworkImage(
-                          imageUrl: song.coverUrl,
-                          width: discSize * 0.65,
-                          height: discSize * 0.65,
-                          fit: BoxFit.cover,
-                          placeholder: (context, url) => Container(
-                            color: Colors.grey.shade800,
-                            child: const Icon(Icons.music_note, size: 50),
-                          ),
-                          errorWidget: (context, url, err) => Container(
-                            color: Colors.grey.shade800,
-                            child: const Icon(Icons.music_note, size: 50),
-                          ),
-                        ),
+                        child: song.coverUrl.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: song.coverUrl,
+                                width: discSize * 0.65,
+                                height: discSize * 0.65,
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) => Container(
+                                  color: Colors.grey.shade800,
+                                  child: const Icon(Icons.music_note, size: 50),
+                                ),
+                                errorWidget: (context, url, err) => Container(
+                                  color: Colors.grey.shade800,
+                                  child: const Icon(Icons.music_note, size: 50),
+                                ),
+                              )
+                            : Container(
+                                color: Colors.grey.shade800,
+                                child: const Icon(Icons.music_note, size: 50),
+                              ),
                       ),
                     ),
                   ),

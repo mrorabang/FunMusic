@@ -3,8 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/song.dart';
 import '../../providers/player_provider.dart';
-import '../../services/deezer_service.dart';
+import '../../services/download_service.dart';
+import '../../services/music_api_service.dart';
+import '../../services/pip_service.dart';
 import '../widgets/mini_player.dart';
+import 'downloads_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,9 +52,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     List<Song> songs;
     if (query == 'Top Hits') {
-      songs = await DeezerService.getTopChart(limit: 30);
+      songs = await MusicApiService.getTopChart(limit: 30);
     } else {
-      songs = await DeezerService.searchSongs(query, limit: 30);
+      songs = await MusicApiService.searchSongs(query, limit: 30);
     }
 
     if (mounted) {
@@ -69,9 +72,84 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _showApiSourceDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.tune_rounded,
+                        color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Chọn nguồn API nhạc',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                ...MusicApiSource.values.map((source) {
+                  final isSelected = MusicApiService.currentSource == source;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      isSelected
+                          ? Icons.radio_button_checked_rounded
+                          : Icons.radio_button_off_rounded,
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey,
+                    ),
+                    title: Text(
+                      source.displayName,
+                      style: TextStyle(
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    subtitle: Text(
+                      source == MusicApiSource.deezer
+                          ? 'Server chính thức Deezer (mp3 preview 30s, ảnh HD)'
+                          : 'Server Apple iTunes (m4a chất lượng cao, không giới hạn)',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onTap: () {
+                      setState(() {
+                        MusicApiService.currentSource = source;
+                      });
+                      Navigator.of(ctx).pop();
+                      _loadData(_searchController.text.isNotEmpty
+                          ? _searchController.text
+                          : _currentFilter);
+                    },
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
+    final downloadService = context.watch<DownloadService>();
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -95,12 +173,43 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: Colors.white, size: 20),
             ),
             const SizedBox(width: 10),
-            const Text(
-              'Deezer Music',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+            Text(
+              MusicApiService.currentSource == MusicApiSource.deezer
+                  ? 'Fun Music (Deezer)'
+                  : 'Fun Music (iTunes)',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
           ],
         ),
+        actions: [
+          // Nút PiP
+          IconButton(
+            tooltip: 'Thu nhỏ PiP ra màn hình chính',
+            icon: const Icon(Icons.picture_in_picture_alt_rounded),
+            onPressed: () => PipService.enterPip(),
+          ),
+          // Nút Đổi API
+          IconButton(
+            tooltip: 'Chọn nguồn API nhạc',
+            icon: const Icon(Icons.tune_rounded),
+            onPressed: _showApiSourceDialog,
+          ),
+          // Nút Đến Trang Đã Tải Về
+          IconButton(
+            tooltip: 'Nhạc đã tải về máy',
+            icon: Badge(
+              isLabelVisible: downloadService.downloadedSongs.isNotEmpty,
+              label: Text('${downloadService.downloadedSongs.length}'),
+              child: const Icon(Icons.download_done_rounded),
+            ),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DownloadsScreen()),
+              );
+            },
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: Column(
         children: [
@@ -112,7 +221,7 @@ class _HomeScreenState extends State<HomeScreen> {
               textInputAction: TextInputAction.search,
               onSubmitted: _onSearchSubmitted,
               decoration: InputDecoration(
-                hintText: 'Tìm bài hát, ca sĩ (Sơn Tùng, Adele...)...',
+                hintText: 'Tìm bài hát, ca sĩ...',
                 prefixIcon: const Icon(Icons.search_rounded),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
@@ -217,28 +326,41 @@ class _HomeScreenState extends State<HomeScreen> {
                             final song = _songs[songIndex];
                             final isCurrentPlaying =
                                 player.currentSong?.id == song.id;
+                            final isDownloaded =
+                                downloadService.isDownloaded(song.id);
+                            final isDownloading =
+                                downloadService.isDownloading(song.id);
+                            final downloadProgress =
+                                downloadService.getProgress(song.id);
 
                             return ListTile(
                               leading: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: CachedNetworkImage(
-                                  imageUrl: song.coverUrl,
-                                  width: 50,
-                                  height: 50,
-                                  fit: BoxFit.cover,
-                                  placeholder: (context, url) => Container(
-                                    width: 50,
-                                    height: 50,
-                                    color: Colors.grey.shade800,
-                                    child: const Icon(Icons.music_note),
-                                  ),
-                                  errorWidget: (context, url, err) => Container(
-                                    width: 50,
-                                    height: 50,
-                                    color: Colors.grey.shade800,
-                                    child: const Icon(Icons.music_note),
-                                  ),
-                                ),
+                                child: song.coverUrl.isNotEmpty
+                                    ? CachedNetworkImage(
+                                        imageUrl: song.coverUrl,
+                                        width: 50,
+                                        height: 50,
+                                        fit: BoxFit.cover,
+                                        placeholder: (context, url) => Container(
+                                          width: 50,
+                                          height: 50,
+                                          color: Colors.grey.shade800,
+                                          child: const Icon(Icons.music_note),
+                                        ),
+                                        errorWidget: (context, url, err) => Container(
+                                          width: 50,
+                                          height: 50,
+                                          color: Colors.grey.shade800,
+                                          child: const Icon(Icons.music_note),
+                                        ),
+                                      )
+                                    : Container(
+                                        width: 50,
+                                        height: 50,
+                                        color: Colors.grey.shade800,
+                                        child: const Icon(Icons.music_note),
+                                      ),
                               ),
                               title: Text(
                                 song.title,
@@ -258,23 +380,78 @@ class _HomeScreenState extends State<HomeScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              trailing: IconButton(
-                                icon: Icon(
-                                  isCurrentPlaying && player.isPlaying
-                                      ? Icons.pause_circle_filled_rounded
-                                      : Icons.play_circle_outline_rounded,
-                                  color: isCurrentPlaying
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Colors.grey,
-                                  size: 32,
-                                ),
-                                onPressed: () {
-                                  if (isCurrentPlaying) {
-                                    player.togglePlayPause();
-                                  } else {
-                                    player.playSong(song, playlist: _songs);
-                                  }
-                                },
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Nút Download
+                                  IconButton(
+                                    tooltip: isDownloaded
+                                        ? 'Đã tải'
+                                        : 'Tải về máy',
+                                    icon: isDownloading
+                                        ? SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              value: downloadProgress,
+                                              strokeWidth: 2,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                            ),
+                                          )
+                                        : Icon(
+                                            isDownloaded
+                                                ? Icons.download_done_rounded
+                                                : Icons.download_rounded,
+                                            size: 22,
+                                            color: isDownloaded
+                                                ? Theme.of(context)
+                                                    .colorScheme
+                                                    .primary
+                                                : Colors.grey,
+                                          ),
+                                    onPressed: isDownloaded || isDownloading
+                                        ? null
+                                        : () async {
+                                            final ok = await downloadService
+                                                .downloadSong(song);
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(ok
+                                                      ? 'Đã tải xong: ${song.title}'
+                                                      : 'Tải bài hát thất bại'),
+                                                  duration: const Duration(
+                                                      seconds: 2),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                  ),
+                                  // Nút Play / Pause
+                                  IconButton(
+                                    icon: Icon(
+                                      isCurrentPlaying && player.isPlaying
+                                          ? Icons.pause_circle_filled_rounded
+                                          : Icons.play_circle_outline_rounded,
+                                      color: isCurrentPlaying
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .primary
+                                          : Colors.grey,
+                                      size: 32,
+                                    ),
+                                    onPressed: () {
+                                      if (isCurrentPlaying) {
+                                        player.togglePlayPause();
+                                      } else {
+                                        player.playSong(song, playlist: _songs);
+                                      }
+                                    },
+                                  ),
+                                ],
                               ),
                               onTap: () {
                                 player.playSong(song, playlist: _songs);

@@ -2,6 +2,8 @@ import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import '../models/song.dart';
+import '../services/notification_service.dart';
+import '../services/pip_service.dart';
 
 class PlayerProvider with ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
@@ -17,6 +19,7 @@ class PlayerProvider with ChangeNotifier {
   bool _isShuffle = false;
 
   PlayerProvider() {
+    _initAudioSession();
     _initAudioListeners();
   }
 
@@ -34,9 +37,38 @@ class PlayerProvider with ChangeNotifier {
   bool get isLoop => _isLoop;
   bool get isShuffle => _isShuffle;
 
+  Future<void> _initAudioSession() async {
+    try {
+      await AudioPlayer.global.setAudioContext(AudioContext(
+        android: const AudioContextAndroid(
+          isSpeakerphoneOn: false,
+          stayAwake: true,
+          contentType: AndroidContentType.music,
+          usageType: AndroidUsageType.media,
+          audioFocus: AndroidAudioFocus.gain,
+        ),
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.playback,
+          options: const {
+            AVAudioSessionOptions.defaultToSpeaker,
+          },
+        ),
+      ));
+    } catch (e) {
+      debugPrint('AudioContext error: $e');
+    }
+  }
+
   void _initAudioListeners() {
     _player.onPlayerStateChanged.listen((state) {
       _state = state;
+      PipService.setPlayingState(state == PlayerState.playing);
+      if (currentSong != null) {
+        NotificationService.showMediaNotification(
+          song: currentSong!,
+          isPlaying: state == PlayerState.playing,
+        );
+      }
       notifyListeners();
     });
 
@@ -76,7 +108,18 @@ class PlayerProvider with ChangeNotifier {
       await _player.stop();
       _position = Duration.zero;
       _duration = Duration.zero;
-      await _player.play(UrlSource(song.streamUrl));
+
+      if (song.isLocal && song.localFilePath != null) {
+        await _player.play(DeviceFileSource(song.localFilePath!));
+      } else {
+        await _player.play(UrlSource(song.streamUrl));
+      }
+
+      await NotificationService.showMediaNotification(
+        song: song,
+        isPlaying: true,
+      );
+      await PipService.setPlayingState(true);
     } catch (e) {
       debugPrint('PlayerProvider.playSong error: $e');
     }
@@ -90,7 +133,11 @@ class PlayerProvider with ChangeNotifier {
       if (_state == PlayerState.paused) {
         await _player.resume();
       } else {
-        await _player.play(UrlSource(currentSong!.streamUrl));
+        if (currentSong!.isLocal && currentSong!.localFilePath != null) {
+          await _player.play(DeviceFileSource(currentSong!.localFilePath!));
+        } else {
+          await _player.play(UrlSource(currentSong!.streamUrl));
+        }
       }
     }
   }
@@ -142,6 +189,7 @@ class PlayerProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    NotificationService.cancel();
     _player.dispose();
     super.dispose();
   }

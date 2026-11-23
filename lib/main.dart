@@ -2,19 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/player_provider.dart';
+import 'services/download_service.dart';
+import 'services/notification_service.dart';
 import 'ui/screens/home_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
+  // Khởi tạo dịch vụ thông báo khóa màn hình và bộ nhớ tải bài hát
+  await NotificationService.init();
+  await DownloadService.instance.init();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => PlayerProvider()),
+        ChangeNotifierProvider.value(value: DownloadService.instance),
       ],
       child: const MusicApp(),
     ),
@@ -27,14 +34,14 @@ class MusicApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Fun Music - Deezer',
+      title: 'Fun Music',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF8B5CF6), // Purple / Indigo
+          seedColor: const Color(0xFF8B5CF6), // Tím neon hiện đại
           brightness: Brightness.dark,
           surface: const Color(0xFF12121A),
           surfaceContainerHighest: const Color(0xFF1E1E2C),
