@@ -1,12 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart' as ja;
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import '../models/song.dart';
+import '../services/download_service.dart';
 import '../services/music_api_service.dart';
 import '../services/notification_service.dart';
 import '../services/pip_service.dart';
+import '../services/soundcloud_service.dart';
 
 enum LoopMode {
   all('Lặp toàn bộ danh sách'),
@@ -86,6 +93,33 @@ class PlayerProvider with ChangeNotifier {
   bool get isShuffle => _isShuffle;
 
   void _initAudioListeners() {
+    // Lắng nghe sự kiện tháo tai nghe / ngắt kết nối AirPods để tự động tạm dừng (chuẩn iOS)
+    AudioSession.instance.then((session) {
+      session.becomingNoisyEventStream.listen((_) {
+        if (isPlaying) {
+          pause();
+        }
+      });
+    });
+
+    // Lắng nghe chuyển bài từ queue hoặc lockscreen
+    _player.currentIndexStream.listen((index) {
+      if (_isYoutubeActive) return;
+      if (index != null &&
+          index != _currentIndex &&
+          index >= 0 &&
+          index < _playlist.length) {
+        _currentIndex = index;
+        notifyListeners();
+        if (currentSong != null) {
+          NotificationService.showMediaNotification(
+            song: currentSong!,
+            isPlaying: isPlaying,
+          );
+        }
+      }
+    });
+
     _player.playerStateStream.listen((state) {
       if (_isYoutubeActive) return;
 
@@ -213,68 +247,140 @@ class PlayerProvider with ChangeNotifier {
           ? Duration(seconds: song.duration)
           : Duration.zero;
 
-      if (song.youtubeId != null && song.youtubeId!.isNotEmpty) {
-        _isYoutubeActive = true;
-        await _player.stop();
-        _isBuffering = true;
-        notifyListeners();
+      final mediaItem = MediaItem(
+        id: song.id.toString(),
+        album: song.album.isNotEmpty ? song.album : 'Q Music',
+        title: song.title,
+        artist: song.artist.isNotEmpty ? song.artist : 'Nghệ sĩ',
+        artUri: song.coverUrl.isNotEmpty ? Uri.tryParse(song.coverUrl) : null,
+        duration: song.duration > 0 ? Duration(seconds: song.duration) : null,
+      );
 
-        debugPrint('Playing YouTube video via IFrame: ${song.youtubeId}');
-        await _ytController.loadVideoById(videoId: song.youtubeId!);
-        await Future.delayed(const Duration(milliseconds: 300));
-        await _ytController.playVideo();
-        _isBuffering = false;
-        notifyListeners();
+      // 1. Ưu tiên cao nhất: Bài hát offline đã tải về máy (hoạt động 100% không cần mạng)
+      if (song.isLocal &&
+          song.localFilePath != null &&
+          File(song.localFilePath!).existsSync()) {
+        _isYoutubeActive = false;
+        try {
+          await _ytController.pauseVideo();
+        } catch (_) {}
+
+        final source = ja.AudioSource.file(
+          song.localFilePath!,
+          tag: mediaItem,
+        );
+        await _player.setAudioSource(source);
+        await _player.play();
+      }
+      // 2. Nếu là bài hát YouTube: Giải mã Native Background Audio để phát khi khóa màn hình & điều khiển AirPods
+      else if (song.youtubeId != null && song.youtubeId!.isNotEmpty) {
+        String? nativeAudioUrl =
+            song.streamUrl.isNotEmpty ? song.streamUrl : null;
+
+        if (nativeAudioUrl == null || nativeAudioUrl.isEmpty) {
+          // Tầng 1: SoundCloud Smart Match
+          final queries =
+              DownloadService.buildSearchQueries(song.title, song.artist);
+          for (final q in queries) {
+            try {
+              final scTrans =
+                  await SoundCloudService.findTranscodingForSearch(q);
+              if (scTrans != null && scTrans.isNotEmpty) {
+                nativeAudioUrl =
+                    await SoundCloudService.resolveStreamUrl(scTrans);
+                if (nativeAudioUrl != null && nativeAudioUrl.isNotEmpty) {
+                  debugPrint('Found Native Background Stream via SoundCloud for "$q"');
+                  break;
+                }
+              }
+            } catch (_) {}
+          }
+
+          // Tầng 2: Piped API Audio Stream Proxy nếu SoundCloud không có
+          if (nativeAudioUrl == null || nativeAudioUrl.isEmpty) {
+            nativeAudioUrl = await _resolvePipedAudioStream(song.youtubeId!);
+            if (nativeAudioUrl != null && nativeAudioUrl.isNotEmpty) {
+              debugPrint('Found Native Background Stream via Piped API for video: ${song.youtubeId}');
+            }
+          }
+        }
+
+        if (nativeAudioUrl != null && nativeAudioUrl.isNotEmpty) {
+          debugPrint(
+              'Playing YouTube song via Native Background Audio (Lockscreen/AirPods active): $nativeAudioUrl');
+          _isYoutubeActive = false;
+          try {
+            await _ytController.pauseVideo();
+          } catch (_) {}
+
+          if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
+            _playlist[_currentIndex] = song.copyWith(streamUrl: nativeAudioUrl);
+          }
+
+          final source = ja.AudioSource.uri(
+            Uri.parse(nativeAudioUrl),
+            tag: mediaItem,
+            headers: {
+              'User-Agent':
+                  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+              'Accept-Encoding': 'identity',
+            },
+          );
+          await _player.setAudioSource(source);
+          await _player.play();
+        } else {
+          // Fallback IFrame nếu không tìm thấy stream
+          _isYoutubeActive = true;
+          await _player.stop();
+          _isBuffering = true;
+          notifyListeners();
+
+          debugPrint('Playing YouTube video via IFrame: ${song.youtubeId}');
+          await _ytController.loadVideoById(videoId: song.youtubeId!);
+          await Future.delayed(const Duration(milliseconds: 300));
+          await _ytController.playVideo();
+          _isBuffering = false;
+          notifyListeners();
+        }
       } else {
         _isYoutubeActive = false;
         try {
           await _ytController.pauseVideo();
         } catch (_) {}
 
-        await _player.stop();
+        String playUrl = song.streamUrl;
+        if (playUrl.isEmpty && (song.soundcloudTranscodingUrl != null)) {
+          _isBuffering = true;
+          notifyListeners();
 
-        if (song.isLocal && song.localFilePath != null) {
-          await _player.setFilePath(song.localFilePath!);
+          final resolved = await MusicApiService.resolveStreamUrl(song);
+          if (resolved != null && resolved.isNotEmpty) {
+            playUrl = resolved;
+            if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
+              _playlist[_currentIndex] = song.copyWith(streamUrl: resolved);
+            }
+          }
+          _isBuffering = false;
+          notifyListeners();
+        }
+
+        if (playUrl.isNotEmpty) {
+          debugPrint(
+              'Loading Native Background Audio (Lockscreen/AirPods active): $playUrl');
+          final source = ja.AudioSource.uri(
+            Uri.parse(playUrl),
+            tag: mediaItem,
+            headers: {
+              'User-Agent':
+                  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+              'Accept-Encoding': 'identity',
+            },
+          );
+          await _player.setAudioSource(source);
           await _player.play();
         } else {
-          String playUrl = song.streamUrl;
-          if (playUrl.isEmpty && (song.soundcloudTranscodingUrl != null)) {
-            _isBuffering = true;
-            notifyListeners();
-
-            final resolved = await MusicApiService.resolveStreamUrl(song);
-            if (resolved != null && resolved.isNotEmpty) {
-              playUrl = resolved;
-              if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
-                _playlist[_currentIndex] = song.copyWith(streamUrl: resolved);
-              }
-            }
-            _isBuffering = false;
-            notifyListeners();
-          }
-
-          if (playUrl.isNotEmpty) {
-            debugPrint('Loading ExoPlayer with URL: $playUrl');
-            await _player
-                .setUrl(
-              playUrl,
-              headers: {
-                'User-Agent':
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept-Encoding': 'identity',
-              },
-            )
-                .timeout(
-              const Duration(seconds: 10),
-              onTimeout: () {
-                debugPrint('Audio loading timed out for ${song.title}');
-                throw TimeoutException('Không thể kết nối luồng phát âm thanh');
-              },
-            );
-            await _player.play();
-          } else {
-            debugPrint('Cannot play song: streamUrl is empty for ${song.title}');
-          }
+          debugPrint(
+              'Cannot play song: streamUrl is empty for ${song.title}');
         }
       }
 
@@ -377,16 +483,28 @@ class PlayerProvider with ChangeNotifier {
     }
   }
 
+  Future<void> pause() async {
+    if (_isYoutubeActive) {
+      await _ytController.pauseVideo();
+    } else {
+      await _player.pause();
+    }
+    notifyListeners();
+  }
+
   void cycleLoopMode() {
     switch (_loopMode) {
       case LoopMode.all:
         _loopMode = LoopMode.single;
+        _player.setLoopMode(ja.LoopMode.one);
         break;
       case LoopMode.single:
         _loopMode = LoopMode.none;
+        _player.setLoopMode(ja.LoopMode.off);
         break;
       case LoopMode.none:
         _loopMode = LoopMode.all;
+        _player.setLoopMode(ja.LoopMode.all);
         break;
     }
     notifyListeners();
@@ -394,7 +512,39 @@ class PlayerProvider with ChangeNotifier {
 
   void toggleShuffle() {
     _isShuffle = !_isShuffle;
+    _player.setShuffleModeEnabled(_isShuffle);
     notifyListeners();
+  }
+
+  Future<String?> _resolvePipedAudioStream(String videoId) async {
+    final pipedInstances = [
+      'https://pipedapi.kavin.rocks',
+      'https://api.piped.private.coffee',
+      'https://cf.piped.video',
+    ];
+
+    for (final instance in pipedInstances) {
+      try {
+        final uri = Uri.parse('$instance/streams/$videoId');
+        final res = await http.get(uri).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          final data = json.decode(utf8.decode(res.bodyBytes));
+          final audioStreams = data['audioStreams'] as List?;
+          if (audioStreams != null && audioStreams.isNotEmpty) {
+            audioStreams.sort((a, b) {
+              final bA = a['bitrate'] is int ? a['bitrate'] : 0;
+              final bB = b['bitrate'] is int ? b['bitrate'] : 0;
+              return (bB as int).compareTo(bA as int);
+            });
+            final streamUrl = audioStreams.first['url']?.toString();
+            if (streamUrl != null && streamUrl.isNotEmpty) {
+              return streamUrl;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
   }
 
   @override

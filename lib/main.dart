@@ -1,5 +1,7 @@
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:provider/provider.dart';
 import 'providers/player_provider.dart';
 import 'services/download_service.dart';
@@ -16,6 +18,22 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
+  // Khởi tạo dịch vụ âm thanh nền chuyên nghiệp (hỗ trợ Lockscreen, Control Center, AirPods)
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.obnil.flutter_music_app.audio',
+    androidNotificationChannelName: 'Q Music Playback',
+    androidNotificationOngoing: true,
+    androidNotificationIcon: 'mipmap/ic_launcher',
+  );
+
+  // Cấu hình AVAudioSession chuyên nghiệp cho iOS (phát nền khi khóa màn hình, điều khiển AirPods)
+  try {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+  } catch (e) {
+    debugPrint('AudioSession init error: $e');
+  }
 
   // Khởi tạo tất cả các dịch vụ nền
   await NotificationService.init();

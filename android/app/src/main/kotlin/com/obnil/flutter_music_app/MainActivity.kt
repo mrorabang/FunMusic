@@ -3,11 +3,11 @@ package com.obnil.flutter_music_app
 import android.app.PictureInPictureParams
 import android.os.Build
 import android.util.Rational
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+class MainActivity : AudioServiceActivity() {
     private val CHANNEL = "com.obnil.flutter_music_app/pip"
     private var isPlayingMusic = false
 

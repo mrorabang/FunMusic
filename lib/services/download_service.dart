@@ -168,7 +168,7 @@ class DownloadService with ChangeNotifier {
 
   /// Tầng 1: Tải bài hát YouTube qua SoundCloud Smart Match
   Future<bool> _downloadYouTubeViaSoundCloud(Song song, File file) async {
-    final queries = _buildSearchQueries(song.title, song.artist);
+    final queries = buildSearchQueries(song.title, song.artist);
     for (final q in queries) {
       try {
         final scTrans = await SoundCloudService.findTranscodingForSearch(q);
@@ -187,7 +187,7 @@ class DownloadService with ChangeNotifier {
   }
 
   /// Thuật toán phân tích và làm sạch tiêu đề YouTube thông minh
-  static List<String> _buildSearchQueries(String rawTitle, String artist) {
+  static List<String> buildSearchQueries(String rawTitle, String artist) {
     final queries = <String>[];
 
     // Loại bỏ nội dung trong ngoặc đơn, ngoặc vuông (MV, Official, Audio, Lyrics...)
