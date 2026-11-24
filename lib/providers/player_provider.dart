@@ -349,6 +349,19 @@ class PlayerProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> stop() async {
+    try {
+      await _player.stop();
+    } catch (_) {}
+    _currentIndex = -1;
+    _position = Duration.zero;
+    _duration = Duration.zero;
+    _isBuffering = false;
+    await NotificationService.cancel();
+    await PipService.setPlayingState(false);
+    notifyListeners();
+  }
+
   void cycleLoopMode() {
     switch (_loopMode) {
       case LoopMode.all:

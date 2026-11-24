@@ -148,6 +148,9 @@ class DownloadService with ChangeNotifier {
         _downloadedSongs.insert(0, localSong);
         await _saveToStorage();
 
+        _downloadProgress[song.id] = 1.0;
+        notifyListeners();
+        await Future.delayed(const Duration(milliseconds: 300));
         _downloadProgress.remove(song.id);
         notifyListeners();
         return true;
@@ -310,7 +313,6 @@ class DownloadService with ChangeNotifier {
   Future<bool> _downloadYouTube(String videoId, File file, int songId) async {
     final yt = YoutubeExplode();
     IOSink? sink;
-    http.Client? client;
     try {
       final manifest = await yt.videos.streamsClient.getManifest(
         videoId,
@@ -334,18 +336,9 @@ class DownloadService with ChangeNotifier {
       int receivedBytes = 0;
 
       sink = file.openWrite();
-      client = http.Client();
-      final req = http.Request('GET', streamInfo.url);
-      req.headers['User-Agent'] =
-          'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; vi_VN)';
-      req.headers['Range'] = 'bytes=0-';
+      final stream = yt.videos.streamsClient.get(streamInfo);
 
-      final res = await client.send(req).timeout(const Duration(seconds: 15));
-      if (res.statusCode != 200 && res.statusCode != 206) {
-        return false;
-      }
-
-      await for (final chunk in res.stream.timeout(const Duration(seconds: 20))) {
+      await for (final chunk in stream) {
         sink.add(chunk);
         receivedBytes += chunk.length;
         if (totalBytes > 0) {
@@ -358,8 +351,6 @@ class DownloadService with ChangeNotifier {
       await sink.flush();
       await sink.close();
       sink = null;
-      client.close();
-      client = null;
       return true;
     } catch (e) {
       debugPrint('DownloadService._downloadYouTube error: $e');
@@ -368,7 +359,6 @@ class DownloadService with ChangeNotifier {
           await sink.close();
         } catch (_) {}
       }
-      client?.close();
       return false;
     } finally {
       yt.close();
@@ -475,7 +465,6 @@ class DownloadService with ChangeNotifier {
           await sink.close();
         } catch (_) {}
       }
-      client?.close();
       return false;
     }
   }
@@ -524,7 +513,6 @@ class DownloadService with ChangeNotifier {
           await sink.close();
         } catch (_) {}
       }
-      client?.close();
       return false;
     }
   }

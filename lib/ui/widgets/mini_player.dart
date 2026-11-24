@@ -127,10 +127,10 @@ class MiniPlayer extends StatelessWidget {
                     // Controls
                     player.isBuffering
                         ? SizedBox(
-                            width: 38,
-                            height: 38,
+                            width: 36,
+                            height: 36,
                             child: Padding(
-                              padding: const EdgeInsets.all(8.0),
+                              padding: const EdgeInsets.all(7.0),
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.5,
                                 color: Theme.of(context).colorScheme.primary,
@@ -142,14 +142,31 @@ class MiniPlayer extends StatelessWidget {
                               player.isPlaying
                                   ? Icons.pause_circle_filled_rounded
                                   : Icons.play_circle_fill_rounded,
-                              size: 38,
+                              size: 36,
                               color: Theme.of(context).colorScheme.primary,
                             ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
                             onPressed: () => player.togglePlayPause(),
                           ),
+                    const SizedBox(width: 8),
                     IconButton(
-                      icon: const Icon(Icons.skip_next_rounded, size: 30),
+                      icon: const Icon(Icons.skip_next_rounded, size: 28),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                       onPressed: () => player.playNext(),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'Đóng bài hát',
+                      icon: Icon(
+                        Icons.close_rounded,
+                        size: 24,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => player.stop(),
                     ),
                   ],
                 ),

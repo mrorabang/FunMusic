@@ -177,15 +177,39 @@ class _PlayerScreenState extends State<PlayerScreen>
           // Nút Download
           if (!song.isLocal)
             IconButton(
-              tooltip: isDownloaded ? 'Đã tải về máy' : 'Tải bài hát về máy',
+              tooltip: isDownloading
+                  ? 'Đang tải: ${((progress ?? 0) * 100).clamp(0, 100).toInt()}%'
+                  : (isDownloaded ? 'Đã tải về máy' : 'Tải bài hát về máy'),
               icon: isDownloading
                   ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        value: progress,
-                        strokeWidth: 2.5,
-                        color: Theme.of(context).colorScheme.primary,
+                      width: 32,
+                      height: 32,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            value: (progress != null && progress > 0)
+                                ? progress
+                                : null,
+                            strokeWidth: 2.5,
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.2),
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          Text(
+                            '${((progress ?? 0) * 100).clamp(0, 100).toInt()}%',
+                            style: TextStyle(
+                              fontSize: (progress != null && progress >= 1.0)
+                                  ? 8.0
+                                  : 9.5,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: -0.5,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ],
                       ),
                     )
                   : Icon(

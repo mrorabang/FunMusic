@@ -828,18 +828,43 @@ class _HomeScreenState extends State<HomeScreen> {
                                 children: [
                                   // Nút Download
                                   IconButton(
-                                    tooltip:
-                                        isDownloaded ? 'Đã tải' : 'Tải về máy',
+                                    tooltip: isDownloading
+                                        ? 'Đang tải: ${((downloadProgress ?? 0) * 100).clamp(0, 100).toInt()}%'
+                                        : (isDownloaded ? 'Đã tải' : 'Tải về máy'),
                                     icon: isDownloading
                                         ? SizedBox(
-                                            width: 18,
-                                            height: 18,
-                                            child: CircularProgressIndicator(
-                                              value: downloadProgress,
-                                              strokeWidth: 2,
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .primary,
+                                            width: 28,
+                                            height: 28,
+                                            child: Stack(
+                                              alignment: Alignment.center,
+                                              children: [
+                                                CircularProgressIndicator(
+                                                  value: (downloadProgress != null && downloadProgress > 0)
+                                                      ? downloadProgress
+                                                      : null,
+                                                  strokeWidth: 2.5,
+                                                  backgroundColor: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary
+                                                      .withValues(alpha: 0.2),
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary,
+                                                ),
+                                                Text(
+                                                  '${((downloadProgress ?? 0) * 100).clamp(0, 100).toInt()}%',
+                                                  style: TextStyle(
+                                                    fontSize: (downloadProgress != null && downloadProgress >= 1.0)
+                                                        ? 7.2
+                                                        : 8.2,
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: -0.5,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           )
                                         : Icon(
