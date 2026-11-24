@@ -1,19 +1,15 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart' as ja;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import '../models/song.dart';
-import '../services/download_service.dart';
 import '../services/music_api_service.dart';
 import '../services/notification_service.dart';
 import '../services/pip_service.dart';
-import '../services/soundcloud_service.dart';
 
 enum LoopMode {
   all('Lặp toàn bộ danh sách'),
@@ -102,24 +98,6 @@ class PlayerProvider with ChangeNotifier {
       });
     });
 
-    // Lắng nghe chuyển bài từ queue hoặc lockscreen
-    _player.currentIndexStream.listen((index) {
-      if (_isYoutubeActive) return;
-      if (index != null &&
-          index != _currentIndex &&
-          index >= 0 &&
-          index < _playlist.length) {
-        _currentIndex = index;
-        notifyListeners();
-        if (currentSong != null) {
-          NotificationService.showMediaNotification(
-            song: currentSong!,
-            isPlaying: isPlaying,
-          );
-        }
-      }
-    });
-
     _player.playerStateStream.listen((state) {
       if (_isYoutubeActive) return;
 
@@ -164,7 +142,6 @@ class PlayerProvider with ChangeNotifier {
         showVideoAnnotations: false,
         privacyEnhancedMode: false,
         strictRelatedVideos: true,
-        origin: 'https://www.youtube-nocookie.com',
         videoStateUpdateInterval: 250,
       ),
     );
@@ -272,76 +249,22 @@ class PlayerProvider with ChangeNotifier {
         await _player.setAudioSource(source);
         await _player.play();
       }
-      // 2. Nếu là bài hát YouTube: Giải mã Native Background Audio để phát khi khóa màn hình & điều khiển AirPods
+      // 2. Nếu là bài hát YouTube: phát chính xác video/audio từ YouTube bằng YouTube Player
       else if (song.youtubeId != null && song.youtubeId!.isNotEmpty) {
-        String? nativeAudioUrl =
-            song.streamUrl.isNotEmpty ? song.streamUrl : null;
-
-        if (nativeAudioUrl == null || nativeAudioUrl.isEmpty) {
-          // Tầng 1: SoundCloud Smart Match
-          final queries =
-              DownloadService.buildSearchQueries(song.title, song.artist);
-          for (final q in queries) {
-            try {
-              final scTrans =
-                  await SoundCloudService.findTranscodingForSearch(q);
-              if (scTrans != null && scTrans.isNotEmpty) {
-                nativeAudioUrl =
-                    await SoundCloudService.resolveStreamUrl(scTrans);
-                if (nativeAudioUrl != null && nativeAudioUrl.isNotEmpty) {
-                  debugPrint('Found Native Background Stream via SoundCloud for "$q"');
-                  break;
-                }
-              }
-            } catch (_) {}
-          }
-
-          // Tầng 2: Piped API Audio Stream Proxy nếu SoundCloud không có
-          if (nativeAudioUrl == null || nativeAudioUrl.isEmpty) {
-            nativeAudioUrl = await _resolvePipedAudioStream(song.youtubeId!);
-            if (nativeAudioUrl != null && nativeAudioUrl.isNotEmpty) {
-              debugPrint('Found Native Background Stream via Piped API for video: ${song.youtubeId}');
-            }
-          }
-        }
-
-        if (nativeAudioUrl != null && nativeAudioUrl.isNotEmpty) {
-          debugPrint(
-              'Playing YouTube song via Native Background Audio (Lockscreen/AirPods active): $nativeAudioUrl');
-          _isYoutubeActive = false;
-          try {
-            await _ytController.pauseVideo();
-          } catch (_) {}
-
-          if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
-            _playlist[_currentIndex] = song.copyWith(streamUrl: nativeAudioUrl);
-          }
-
-          final source = ja.AudioSource.uri(
-            Uri.parse(nativeAudioUrl),
-            tag: mediaItem,
-            headers: {
-              'User-Agent':
-                  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-              'Accept-Encoding': 'identity',
-            },
-          );
-          await _player.setAudioSource(source);
-          await _player.play();
-        } else {
-          // Fallback IFrame nếu không tìm thấy stream
-          _isYoutubeActive = true;
+        _isYoutubeActive = true;
+        try {
           await _player.stop();
-          _isBuffering = true;
-          notifyListeners();
+        } catch (_) {}
 
-          debugPrint('Playing YouTube video via IFrame: ${song.youtubeId}');
-          await _ytController.loadVideoById(videoId: song.youtubeId!);
-          await Future.delayed(const Duration(milliseconds: 300));
-          await _ytController.playVideo();
-          _isBuffering = false;
-          notifyListeners();
-        }
+        _isBuffering = true;
+        notifyListeners();
+
+        debugPrint('Playing YouTube video: ${song.youtubeId} (${song.title})');
+        await _ytController.loadVideoById(videoId: song.youtubeId!);
+        await Future.delayed(const Duration(milliseconds: 300));
+        await _ytController.playVideo();
+        _isBuffering = false;
+        notifyListeners();
       } else {
         _isYoutubeActive = false;
         try {
@@ -514,37 +437,6 @@ class PlayerProvider with ChangeNotifier {
     _isShuffle = !_isShuffle;
     _player.setShuffleModeEnabled(_isShuffle);
     notifyListeners();
-  }
-
-  Future<String?> _resolvePipedAudioStream(String videoId) async {
-    final pipedInstances = [
-      'https://pipedapi.kavin.rocks',
-      'https://api.piped.private.coffee',
-      'https://cf.piped.video',
-    ];
-
-    for (final instance in pipedInstances) {
-      try {
-        final uri = Uri.parse('$instance/streams/$videoId');
-        final res = await http.get(uri).timeout(const Duration(seconds: 4));
-        if (res.statusCode == 200) {
-          final data = json.decode(utf8.decode(res.bodyBytes));
-          final audioStreams = data['audioStreams'] as List?;
-          if (audioStreams != null && audioStreams.isNotEmpty) {
-            audioStreams.sort((a, b) {
-              final bA = a['bitrate'] is int ? a['bitrate'] : 0;
-              final bB = b['bitrate'] is int ? b['bitrate'] : 0;
-              return (bB as int).compareTo(bA as int);
-            });
-            final streamUrl = audioStreams.first['url']?.toString();
-            if (streamUrl != null && streamUrl.isNotEmpty) {
-              return streamUrl;
-            }
-          }
-        }
-      } catch (_) {}
-    }
-    return null;
   }
 
   @override

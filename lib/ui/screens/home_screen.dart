@@ -608,11 +608,16 @@ class _HomeScreenState extends State<HomeScreen> {
         Positioned(
           bottom: 0,
           right: 0,
-          width: 2,
-          height: 2,
-          child: YoutubePlayer(
-            controller: player.ytController,
-            aspectRatio: 16 / 9,
+          width: 40,
+          height: 40,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: 0.02,
+              child: YoutubePlayer(
+                controller: player.ytController,
+                aspectRatio: 16 / 9,
+              ),
+            ),
           ),
         ),
       ],
