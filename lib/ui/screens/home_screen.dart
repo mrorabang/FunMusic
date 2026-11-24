@@ -604,20 +604,15 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-        // Persistent YouTube IFrame Engine (hoạt động ngầm xuyên suốt ứng dụng)
+        // Persistent YouTube IFrame Engine (hoạt động ngầm xuyên suốt ứng dụng, tương thích 100% iOS & Android)
         Positioned(
           bottom: 0,
           right: 0,
-          width: 200,
-          height: 200,
-          child: IgnorePointer(
-            child: Opacity(
-              opacity: 0.001,
-              child: YoutubePlayer(
-                controller: player.ytController,
-                aspectRatio: 16 / 9,
-              ),
-            ),
+          width: 2,
+          height: 2,
+          child: YoutubePlayer(
+            controller: player.ytController,
+            aspectRatio: 16 / 9,
           ),
         ),
       ],

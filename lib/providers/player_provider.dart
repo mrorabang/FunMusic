@@ -128,7 +128,9 @@ class PlayerProvider with ChangeNotifier {
         mute: false,
         enableCaption: false,
         showVideoAnnotations: false,
-        privacyEnhancedMode: true,
+        privacyEnhancedMode: false,
+        strictRelatedVideos: true,
+        origin: 'https://www.youtube-nocookie.com',
         videoStateUpdateInterval: 250,
       ),
     );
@@ -219,6 +221,7 @@ class PlayerProvider with ChangeNotifier {
 
         debugPrint('Playing YouTube video via IFrame: ${song.youtubeId}');
         await _ytController.loadVideoById(videoId: song.youtubeId!);
+        await Future.delayed(const Duration(milliseconds: 300));
         await _ytController.playVideo();
         _isBuffering = false;
         notifyListeners();

@@ -131,11 +131,12 @@ class SoundCloudService {
   /// Tìm link transcoding HLS/MP4 hợp lệ cho một truy vấn bài hát bất kỳ
   static Future<String?> findTranscodingForSearch(String query) async {
     try {
-      final songs = await searchSongs(query, limit: 3);
-      if (songs.isNotEmpty &&
-          songs.first.soundcloudTranscodingUrl != null &&
-          songs.first.soundcloudTranscodingUrl!.isNotEmpty) {
-        return songs.first.soundcloudTranscodingUrl;
+      final songs = await searchSongs(query, limit: 5);
+      for (final s in songs) {
+        if (s.soundcloudTranscodingUrl != null &&
+            s.soundcloudTranscodingUrl!.isNotEmpty) {
+          return s.soundcloudTranscodingUrl;
+        }
       }
     } catch (e) {
       debugPrint('SoundCloudService.findTranscodingForSearch error: $e');
