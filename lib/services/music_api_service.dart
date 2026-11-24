@@ -260,7 +260,19 @@ class MusicApiService {
           song.soundcloudTranscodingUrl!);
     }
     if (song.youtubeId != null && song.youtubeId!.isNotEmpty) {
-      return YouTubeMusicService.resolveStreamUrl(song.youtubeId!);
+      final ytUrl = await YouTubeMusicService.resolveStreamUrl(song.youtubeId!);
+      if (ytUrl != null && ytUrl.isNotEmpty) {
+        return ytUrl;
+      }
+      debugPrint('YouTube direct stream unavailable, attempting SoundCloud fallback for: ${song.title}');
+      try {
+        final scSongs = await SoundCloudService.searchSongs('${song.title} ${song.artist}', limit: 3);
+        if (scSongs.isNotEmpty && scSongs.first.soundcloudTranscodingUrl != null) {
+          return await SoundCloudService.resolveStreamUrl(scSongs.first.soundcloudTranscodingUrl!);
+        }
+      } catch (e) {
+        debugPrint('SoundCloud fallback error: $e');
+      }
     }
     if (song.streamUrl.isNotEmpty) {
       return song.streamUrl;

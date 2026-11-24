@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/song.dart';
-import 'local_audio_stream_server.dart';
 
 class YouTubeMusicService {
   static final YoutubeExplode _yt = YoutubeExplode();
@@ -23,12 +22,18 @@ class YouTubeMusicService {
   /// Lấy Audio Stream URL chất lượng cao (AAC m4a hoặc Opus) trực tiếp từ YouTube
   static Future<String?> resolveStreamUrl(String videoId) async {
     if (_streamCache.containsKey(videoId)) {
-      return LocalAudioStreamServer.instance
-          .getProxyUrl(videoId, _streamCache[videoId]!);
+      return _streamCache[videoId]!;
     }
 
     try {
-      final manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      final manifest = await _yt.videos.streamsClient.getManifest(
+        videoId,
+        ytClients: [
+          YoutubeApiClient.ios,
+          YoutubeApiClient.androidVr,
+          YoutubeApiClient.androidSdkless,
+        ],
+      );
       final audioStreams = manifest.audioOnly;
       if (audioStreams.isEmpty) return null;
 
@@ -37,17 +42,13 @@ class YouTubeMusicService {
           .where((s) => s.container.name.toLowerCase() == 'mp4')
           .toList();
 
-      AudioStreamInfo streamInfo;
-      if (mp4Streams.isNotEmpty) {
-        streamInfo = mp4Streams.withHighestBitrate();
-      } else {
-        streamInfo = audioStreams.withHighestBitrate();
-      }
+      final streamInfo = mp4Streams.isNotEmpty
+          ? mp4Streams.withHighestBitrate()
+          : audioStreams.withHighestBitrate();
 
       final url = streamInfo.url.toString();
       _streamCache[videoId] = url;
-      // Chuyển tiếp qua proxy cục bộ để vượt rào cản 403 Forbidden của Google CDN
-      return LocalAudioStreamServer.instance.getProxyUrl(videoId, url);
+      return url;
     } catch (e) {
       debugPrint('YouTubeMusicService.resolveStreamUrl error for $videoId: $e');
       return null;

@@ -102,20 +102,21 @@ class DownloadService with ChangeNotifier {
 
       // 1. Nếu là bài hát YouTube: Hệ thống tải đa tầng chống 403 Google CDN
       if (song.youtubeId != null && song.youtubeId!.isNotEmpty) {
-        // Tầng 1: SoundCloud Smart Match (lossless/AAC HLS siêu tốc, miễn nhiễm 403)
-        success = await _downloadYouTubeViaSoundCloud(song, file);
+        // Tầng 1: Tải trực tiếp chính xác audio từ YouTube qua YoutubeExplode iOS/Android client
+        debugPrint('Trying YoutubeExplode direct stream for: ${song.title}');
+        success = await _downloadYouTube(song.youtubeId!, file, song.id);
 
-        // Tầng 2: Nếu chưa tìm thấy, tải qua Public Piped / Invidious Streams API (Direct Audio Proxy)
+        // Tầng 2: Nếu chưa được, thử SoundCloud Smart Match (AAC HLS)
+        if (!success) {
+          debugPrint('Trying SoundCloud fallback for: ${song.title}');
+          success = await _downloadYouTubeViaSoundCloud(song, file);
+        }
+
+        // Tầng 3: Nếu vẫn chưa được, thử qua Public Piped API
         if (!success) {
           debugPrint('Trying Piped Audio Streams API for: ${song.title}');
           success =
               await _downloadYouTubeViaPiped(song.youtubeId!, file, song.id);
-        }
-
-        // Tầng 3: Nếu vẫn chưa được, thử qua YoutubeExplode iOS/Android client
-        if (!success) {
-          debugPrint('Trying YoutubeExplode direct stream for: ${song.title}');
-          success = await _downloadYouTube(song.youtubeId!, file, song.id);
         }
       }
       // 2. Nếu là bài hát SoundCloud HLS

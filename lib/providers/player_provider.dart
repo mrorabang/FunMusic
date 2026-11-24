@@ -5,11 +5,12 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart' as ja;
 import 'package:just_audio_background/just_audio_background.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import '../models/song.dart';
+import '../services/download_service.dart';
 import '../services/music_api_service.dart';
 import '../services/notification_service.dart';
 import '../services/pip_service.dart';
+import '../services/soundcloud_service.dart';
 
 enum LoopMode {
   all('Lặp toàn bộ danh sách'),
@@ -22,7 +23,6 @@ enum LoopMode {
 
 class PlayerProvider with ChangeNotifier {
   final ja.AudioPlayer _player = ja.AudioPlayer();
-  late final YoutubePlayerController _ytController;
 
   List<Song> _playlist = [];
   int _currentIndex = -1;
@@ -32,23 +32,15 @@ class PlayerProvider with ChangeNotifier {
   Duration _duration = Duration.zero;
   bool _isBuffering = false;
 
-  PlayerState _ytPlayerState = PlayerState.unknown;
-  bool _isYoutubeActive = false;
-
-  StreamSubscription? _ytStateSub;
-  StreamSubscription? _ytVideoSub;
-
   LoopMode _loopMode = LoopMode.all;
   bool _isShuffle = false;
 
   PlayerProvider() {
     _initAudioListeners();
-    _initYoutubeController();
   }
 
   // Getters
-  YoutubePlayerController get ytController => _ytController;
-  bool get isYoutubeActive => _isYoutubeActive;
+  bool get isYoutubeActive => false;
 
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
@@ -58,27 +50,16 @@ class PlayerProvider with ChangeNotifier {
           ? _playlist[_currentIndex]
           : null;
 
-  bool get isPlaying {
-    if (_isYoutubeActive) {
-      return _ytPlayerState == PlayerState.playing;
-    }
-    return _player.playing &&
-        _player.processingState != ja.ProcessingState.completed;
-  }
+  bool get isPlaying =>
+      _player.playing &&
+      _player.processingState != ja.ProcessingState.completed;
 
-  bool get isPaused {
-    if (_isYoutubeActive) {
-      return _ytPlayerState == PlayerState.paused;
-    }
-    return !_player.playing &&
-        _player.processingState != ja.ProcessingState.idle;
-  }
+  bool get isPaused =>
+      !_player.playing &&
+      _player.processingState != ja.ProcessingState.idle;
 
   bool get isBuffering {
     if (_isBuffering) return true;
-    if (_isYoutubeActive) {
-      return _ytPlayerState == PlayerState.buffering;
-    }
     return _player.processingState == ja.ProcessingState.buffering ||
         _player.processingState == ja.ProcessingState.loading;
   }
@@ -99,8 +80,6 @@ class PlayerProvider with ChangeNotifier {
     });
 
     _player.playerStateStream.listen((state) {
-      if (_isYoutubeActive) return;
-
       final playing = state.playing &&
           state.processingState != ja.ProcessingState.completed;
       PipService.setPlayingState(playing);
@@ -117,60 +96,15 @@ class PlayerProvider with ChangeNotifier {
     });
 
     _player.positionStream.listen((pos) {
-      if (_isYoutubeActive) return;
       _position = pos;
       notifyListeners();
     });
 
     _player.durationStream.listen((dur) {
-      if (_isYoutubeActive) return;
       if (dur != null) {
         _duration = dur;
         notifyListeners();
       }
-    });
-  }
-
-  void _initYoutubeController() {
-    _ytController = YoutubePlayerController(
-      params: const YoutubePlayerParams(
-        showControls: false,
-        showFullscreenButton: false,
-        playsInline: true,
-        mute: false,
-        enableCaption: false,
-        showVideoAnnotations: false,
-        privacyEnhancedMode: false,
-        strictRelatedVideos: true,
-        videoStateUpdateInterval: 250,
-      ),
-    );
-
-    _ytStateSub = _ytController.stream.listen((val) {
-      if (!_isYoutubeActive) return;
-
-      _ytPlayerState = val.playerState;
-      final playing = val.playerState == PlayerState.playing;
-      PipService.setPlayingState(playing);
-      if (currentSong != null) {
-        NotificationService.showMediaNotification(
-          song: currentSong!,
-          isPlaying: playing,
-        );
-      }
-      if (val.playerState == PlayerState.ended) {
-        _handleSongCompletion();
-      }
-      if (val.metaData.duration.inSeconds > 0) {
-        _duration = val.metaData.duration;
-      }
-      notifyListeners();
-    });
-
-    _ytVideoSub = _ytController.videoStateStream.listen((vState) {
-      if (!_isYoutubeActive) return;
-      _position = vState.position;
-      notifyListeners();
     });
   }
 
@@ -179,11 +113,7 @@ class PlayerProvider with ChangeNotifier {
 
     if (_loopMode == LoopMode.single) {
       await seek(Duration.zero);
-      if (_isYoutubeActive) {
-        await _ytController.playVideo();
-      } else {
-        await _player.play();
-      }
+      await _player.play();
       return;
     }
 
@@ -237,11 +167,6 @@ class PlayerProvider with ChangeNotifier {
       if (song.isLocal &&
           song.localFilePath != null &&
           File(song.localFilePath!).existsSync()) {
-        _isYoutubeActive = false;
-        try {
-          await _ytController.pauseVideo();
-        } catch (_) {}
-
         final source = ja.AudioSource.file(
           song.localFilePath!,
           tag: mediaItem,
@@ -249,30 +174,10 @@ class PlayerProvider with ChangeNotifier {
         await _player.setAudioSource(source);
         await _player.play();
       }
-      // 2. Nếu là bài hát YouTube: phát chính xác video/audio từ YouTube bằng YouTube Player
-      else if (song.youtubeId != null && song.youtubeId!.isNotEmpty) {
-        _isYoutubeActive = true;
-        try {
-          await _player.stop();
-        } catch (_) {}
-
-        _isBuffering = true;
-        notifyListeners();
-
-        debugPrint('Playing YouTube video: ${song.youtubeId} (${song.title})');
-        await _ytController.loadVideoById(videoId: song.youtubeId!);
-        await Future.delayed(const Duration(milliseconds: 300));
-        await _ytController.playVideo();
-        _isBuffering = false;
-        notifyListeners();
-      } else {
-        _isYoutubeActive = false;
-        try {
-          await _ytController.pauseVideo();
-        } catch (_) {}
-
+      // 2. Bài hát trực tuyến (YouTube Music, SoundCloud, Deezer, iTunes, Custom API)
+      else {
         String playUrl = song.streamUrl;
-        if (playUrl.isEmpty && (song.soundcloudTranscodingUrl != null)) {
+        if (playUrl.isEmpty) {
           _isBuffering = true;
           notifyListeners();
 
@@ -287,23 +192,52 @@ class PlayerProvider with ChangeNotifier {
           notifyListeners();
         }
 
+        bool playedSuccessfully = false;
+        final headers = {
+          'User-Agent':
+              'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+          'Accept-Encoding': 'identity',
+        };
+
         if (playUrl.isNotEmpty) {
-          debugPrint(
-              'Loading Native Background Audio (Lockscreen/AirPods active): $playUrl');
-          final source = ja.AudioSource.uri(
-            Uri.parse(playUrl),
-            tag: mediaItem,
-            headers: {
-              'User-Agent':
-                  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-              'Accept-Encoding': 'identity',
-            },
-          );
-          await _player.setAudioSource(source);
-          await _player.play();
-        } else {
-          debugPrint(
-              'Cannot play song: streamUrl is empty for ${song.title}');
+          try {
+            debugPrint(
+                'Loading Native Background Audio (Lockscreen/AirPods active): $playUrl');
+            final source = ja.AudioSource.uri(
+              Uri.parse(playUrl),
+              tag: mediaItem,
+              headers: headers,
+            );
+            await _player.setAudioSource(source);
+            await _player.play();
+            playedSuccessfully = true;
+          } catch (e) {
+            debugPrint('Primary stream playback error ($e). Attempting auto smart fallback...');
+          }
+        }
+
+        // Tự động kích hoạt Smart Fallback nếu stream chính bị chặn 403 Forbidden hoặc lỗi tải
+        if (!playedSuccessfully) {
+          _isBuffering = true;
+          notifyListeners();
+          final fallbackUrl = await _resolveFallbackStream(song);
+          _isBuffering = false;
+          notifyListeners();
+
+          if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
+            debugPrint('Playing audio via Smart Fallback: $fallbackUrl');
+            final fbSource = ja.AudioSource.uri(
+              Uri.parse(fallbackUrl),
+              tag: mediaItem,
+              headers: headers,
+            );
+            await _player.setAudioSource(fbSource);
+            await _player.play();
+            playedSuccessfully = true;
+          } else {
+            debugPrint(
+                'Cannot play song: both primary and fallback streams failed for ${song.title}');
+          }
         }
       }
 
@@ -319,23 +253,39 @@ class PlayerProvider with ChangeNotifier {
     }
   }
 
+  Future<String?> _resolveFallbackStream(Song song) async {
+    try {
+      final queries = DownloadService.buildSearchQueries(song.title, song.artist);
+      for (final q in queries) {
+        final scSongs = await SoundCloudService.searchSongs(q, limit: 3);
+        if (scSongs.isNotEmpty) {
+          for (final sc in scSongs) {
+            if (sc.soundcloudTranscodingUrl != null &&
+                sc.soundcloudTranscodingUrl!.isNotEmpty) {
+              final stream = await SoundCloudService.resolveStreamUrl(
+                  sc.soundcloudTranscodingUrl!);
+              if (stream != null && stream.isNotEmpty) {
+                return stream;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('_resolveFallbackStream error: $e');
+    }
+    return null;
+  }
+
   Future<void> togglePlayPause() async {
     if (currentSong == null) return;
-    if (_isYoutubeActive) {
-      if (_ytPlayerState == PlayerState.playing) {
-        await _ytController.pauseVideo();
-      } else {
-        await _ytController.playVideo();
-      }
+    if (_player.playing) {
+      await _player.pause();
     } else {
-      if (_player.playing) {
-        await _player.pause();
-      } else {
-        if (_player.processingState == ja.ProcessingState.completed) {
-          await seek(Duration.zero);
-        }
-        await _player.play();
+      if (_player.processingState == ja.ProcessingState.completed) {
+        await seek(Duration.zero);
       }
+      await _player.play();
     }
   }
 
@@ -357,11 +307,7 @@ class PlayerProvider with ChangeNotifier {
         if (_loopMode == LoopMode.all) {
           _currentIndex = 0;
         } else if (autoTriggered && _loopMode == LoopMode.none) {
-          if (_isYoutubeActive) {
-            await _ytController.stopVideo();
-          } else {
-            await _player.stop();
-          }
+          await _player.stop();
           _position = Duration.zero;
           notifyListeners();
           return;
@@ -393,25 +339,13 @@ class PlayerProvider with ChangeNotifier {
     await _playCurrent();
   }
 
-  Future<void> seek(Duration newPosition) async {
-    if (_isYoutubeActive) {
-      await _ytController.seekTo(
-        seconds: newPosition.inSeconds.toDouble(),
-        allowSeekAhead: true,
-      );
-      _position = newPosition;
-      notifyListeners();
-    } else {
-      await _player.seek(newPosition);
-    }
+  Future<Duration> seek(Duration newPosition) async {
+    await _player.seek(newPosition);
+    return newPosition;
   }
 
   Future<void> pause() async {
-    if (_isYoutubeActive) {
-      await _ytController.pauseVideo();
-    } else {
-      await _player.pause();
-    }
+    await _player.pause();
     notifyListeners();
   }
 
@@ -441,9 +375,6 @@ class PlayerProvider with ChangeNotifier {
 
   @override
   void dispose() {
-    _ytStateSub?.cancel();
-    _ytVideoSub?.cancel();
-    _ytController.close();
     NotificationService.cancel();
     _player.dispose();
     super.dispose();

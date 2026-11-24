@@ -1,7 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import '../../models/song.dart';
 import '../../providers/player_provider.dart';
 import '../../services/download_service.dart';
@@ -553,8 +552,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final player = context.watch<PlayerProvider>();
-
     return Stack(
       children: [
         Scaffold(
@@ -602,22 +599,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: 'Thiết bị & Tải về',
               ),
             ],
-          ),
-        ),
-        // Persistent YouTube IFrame Engine (hoạt động ngầm xuyên suốt ứng dụng, tương thích 100% iOS & Android)
-        Positioned(
-          bottom: 0,
-          right: 0,
-          width: 40,
-          height: 40,
-          child: IgnorePointer(
-            child: Opacity(
-              opacity: 0.02,
-              child: YoutubePlayer(
-                controller: player.ytController,
-                aspectRatio: 16 / 9,
-              ),
-            ),
           ),
         ),
       ],
